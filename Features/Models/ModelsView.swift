@@ -912,11 +912,11 @@ struct ModelsView: View {
         Binding(
             get: {
                 switch appModel.profile?.server.flashAttention {
-                case true:
+                case .some(true):
                     .enabled
-                case false:
+                case .some(false):
                     .disabled
-                case nil:
+                case .none:
                     .runtimeDefault
                 }
             },
