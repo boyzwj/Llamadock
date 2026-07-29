@@ -64,12 +64,9 @@ public struct RuntimeProbe: Sendable {
 
         let versionResult: ProcessResult
         do {
-            versionResult = try await processRunner.run(
-                try ProcessInvocation(
-                    executableURL: serverURL,
-                    arguments: ["--version"]
-                ),
-                timeout: .seconds(timeoutSeconds)
+            versionResult = try await runProbe(
+                executableURL: serverURL,
+                arguments: ["--version"]
             )
         } catch {
             return invalidReport(
@@ -119,12 +116,9 @@ public struct RuntimeProbe: Sendable {
     ) async -> (capabilities: RuntimeCapabilities, warning: String?) {
         let result: ProcessResult
         do {
-            result = try await processRunner.run(
-                try ProcessInvocation(
-                    executableURL: serverURL,
-                    arguments: ["--help"]
-                ),
-                timeout: .seconds(timeoutSeconds)
+            result = try await runProbe(
+                executableURL: serverURL,
+                arguments: ["--help"]
             )
         } catch {
             let message = "Capability probe failed: \(error.localizedDescription)"
@@ -167,12 +161,9 @@ public struct RuntimeProbe: Sendable {
         }
 
         guard
-            let result = try? await processRunner.run(
-                try ProcessInvocation(
-                    executableURL: llamaURL,
-                    arguments: ["--version"]
-                ),
-                timeout: .seconds(timeoutSeconds)
+            let result = try? await runProbe(
+                executableURL: llamaURL,
+                arguments: ["--version"]
             ),
             !result.timedOut,
             result.terminationStatus == 0
@@ -181,6 +172,61 @@ public struct RuntimeProbe: Sendable {
         }
 
         return visibleOutput(result)
+    }
+
+    private func runProbe(
+        executableURL: URL,
+        arguments: [String]
+    ) async throws -> ProcessResult {
+        let deviceDisabledArguments = [
+            "--device",
+            "none",
+        ] + arguments
+        let primaryResult = try await processRunner.run(
+            try ProcessInvocation(
+                executableURL: executableURL,
+                arguments: deviceDisabledArguments
+            ),
+            timeout: .seconds(timeoutSeconds)
+        )
+
+        guard shouldRetryWithoutDeviceFlag(primaryResult) else {
+            return primaryResult
+        }
+
+        return try await processRunner.run(
+            try ProcessInvocation(
+                executableURL: executableURL,
+                arguments: arguments
+            ),
+            timeout: .seconds(timeoutSeconds)
+        )
+    }
+
+    private func shouldRetryWithoutDeviceFlag(
+        _ result: ProcessResult
+    ) -> Bool {
+        guard result.terminationStatus != 0, !result.timedOut else {
+            return false
+        }
+
+        let output = [
+            result.standardOutput,
+            result.standardError,
+        ]
+        .joined(separator: "\n")
+        .lowercased()
+        guard output.contains("device") else {
+            return false
+        }
+
+        return [
+            "unknown",
+            "unrecognized",
+            "invalid argument",
+            "invalid option",
+            "unsupported",
+        ].contains { output.contains($0) }
     }
 
     private func invalidReport(

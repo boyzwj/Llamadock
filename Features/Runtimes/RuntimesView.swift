@@ -126,6 +126,13 @@ private struct RuntimeReportRow: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
+
+            if case .invalid(let reason) = report.validation {
+                Label(reason, systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+            }
         }
         .padding(.vertical, 6)
     }

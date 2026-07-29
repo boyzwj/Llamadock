@@ -12,7 +12,27 @@ public enum ServerState: Equatable, Sendable {
 public enum ServerProcessError: Error, Equatable, Sendable {
     case alreadyRunning
     case invalidEndpoint(host: String, port: UInt16)
+    case endpointUnavailable(
+        host: String,
+        port: UInt16,
+        reason: String
+    )
     case launchFailed(reason: String)
+}
+
+extension ServerProcessError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .alreadyRunning:
+            "A LlamaDock-owned server is already active."
+        case .invalidEndpoint(let host, let port):
+            "The server endpoint \(host):\(port) is invalid."
+        case .endpointUnavailable(_, _, let reason):
+            reason
+        case .launchFailed(let reason):
+            "llama-server could not be launched: \(reason)"
+        }
+    }
 }
 
 public struct ServerRun: Equatable, Identifiable, Sendable {
@@ -62,6 +82,7 @@ public struct ServerSnapshot: Equatable, Sendable {
 public actor ServerProcessController {
     private let launcher: any ServerProcessLaunching
     private let healthChecker: any ServerHealthChecking
+    private let endpointChecker: any ServerEndpointChecking
     private var state: ServerState = .stopped
     private var run: ServerRun?
     private var ownedProcess: (any ManagedServerProcess)?
@@ -71,10 +92,12 @@ public actor ServerProcessController {
     public init(
         launcher: any ServerProcessLaunching = FoundationServerProcessLauncher(),
         healthChecker: any ServerHealthChecking = LlamaServerHealthAdapter(),
+        endpointChecker: any ServerEndpointChecking = SocketServerEndpointChecker(),
         logBuffer: BoundedLogBuffer = BoundedLogBuffer()
     ) {
         self.launcher = launcher
         self.healthChecker = healthChecker
+        self.endpointChecker = endpointChecker
         self.logBuffer = logBuffer
     }
 
@@ -107,6 +130,16 @@ public actor ServerProcessController {
             throw ServerProcessError.invalidEndpoint(
                 host: host,
                 port: port
+            )
+        }
+        if case .unavailable(let reason) = endpointChecker.check(
+            host: host,
+            port: port
+        ) {
+            throw ServerProcessError.endpointUnavailable(
+                host: host,
+                port: port,
+                reason: reason
             )
         }
 

@@ -40,7 +40,57 @@ struct RuntimeProbeTests {
         #expect(report.capabilities?.detectedAt == detectedAt)
         let invocations = await runner.recordedInvocations()
         #expect(invocations.map(\.executableURL) == [serverURL, serverURL])
-        #expect(invocations.map(\.arguments) == [["--version"], ["--help"]])
+        #expect(
+            invocations.map(\.arguments)
+                == [
+                    ["--device", "none", "--version"],
+                    ["--device", "none", "--help"],
+                ]
+        )
+    }
+
+    @Test("falls back when an older runtime rejects the probe device flag")
+    func fallsBackWithoutDeviceFlag() async {
+        let runner = QueueProcessRunner(
+            responses: [
+                ProcessResult(
+                    terminationStatus: 1,
+                    standardOutput: "",
+                    standardError: "unknown argument: --device"
+                ),
+                ProcessResult(
+                    terminationStatus: 0,
+                    standardOutput: "llama-server version b999",
+                    standardError: ""
+                ),
+                ProcessResult(
+                    terminationStatus: 1,
+                    standardOutput: "",
+                    standardError: "unrecognized option '--device'"
+                ),
+                ProcessResult(
+                    terminationStatus: 0,
+                    standardOutput: "--model FNAME\n--host HOST\n--port PORT",
+                    standardError: ""
+                ),
+            ]
+        )
+        let probe = RuntimeProbe(processRunner: runner)
+
+        let report = await probe.probe(customCandidate)
+
+        #expect(report.validation == .valid)
+        #expect(report.serverVersionOutput == "llama-server version b999")
+        #expect(report.capabilities?.detection == .detected)
+        #expect(
+            await runner.recordedInvocations().map(\.arguments)
+                == [
+                    ["--device", "none", "--version"],
+                    ["--version"],
+                    ["--device", "none", "--help"],
+                    ["--help"],
+                ]
+        )
     }
 
     @Test("reports a failed version probe with visible stderr")

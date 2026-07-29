@@ -33,7 +33,7 @@ final class AppModel {
 
     init(
         runtimeDiscovery: RuntimeCandidateDiscovery = RuntimeCandidateDiscovery(),
-        runtimeProbe: RuntimeProbe = RuntimeProbe(),
+        runtimeProbe: RuntimeProbe = RuntimeProbe(timeoutSeconds: 30),
         serverController: ServerProcessController = ServerProcessController(),
         userDefaults: UserDefaults = .standard
     ) {
@@ -259,7 +259,7 @@ final class AppModel {
                 port: profile.server.port
             )
         } catch {
-            visibleError = "Could not start llama-server: \(error)"
+            visibleError = "Could not start llama-server: \(error.localizedDescription)"
         }
         serverSnapshot = await serverController.snapshot()
     }

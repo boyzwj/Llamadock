@@ -11,7 +11,8 @@ struct ServerProcessControllerTests {
         let health = StaticHealthChecker(result: .ready)
         let controller = ServerProcessController(
             launcher: launcher,
-            healthChecker: health
+            healthChecker: health,
+            endpointChecker: StaticEndpointChecker(result: .available)
         )
         let invocation = try makeInvocation()
         let profileID = UUID()
@@ -67,7 +68,8 @@ struct ServerProcessControllerTests {
             launcher: FakeServerProcessLauncher(handles: [handle]),
             healthChecker: StaticHealthChecker(
                 result: .unavailable(reason: "connection refused")
-            )
+            ),
+            endpointChecker: StaticEndpointChecker(result: .available)
         )
 
         try await controller.start(
@@ -90,7 +92,8 @@ struct ServerProcessControllerTests {
         let handle = FakeManagedProcessHandle(processIdentifier: 4_244)
         let controller = ServerProcessController(
             launcher: FakeServerProcessLauncher(handles: [handle]),
-            healthChecker: StaticHealthChecker(result: .ready)
+            healthChecker: StaticHealthChecker(result: .ready),
+            endpointChecker: StaticEndpointChecker(result: .available)
         )
         try await controller.start(
             profileID: UUID(),
@@ -113,7 +116,8 @@ struct ServerProcessControllerTests {
         let handle = FakeManagedProcessHandle(processIdentifier: 4_245)
         let controller = ServerProcessController(
             launcher: FakeServerProcessLauncher(handles: [handle]),
-            healthChecker: StaticHealthChecker(result: .ready)
+            healthChecker: StaticHealthChecker(result: .ready),
+            endpointChecker: StaticEndpointChecker(result: .available)
         )
         try await controller.start(
             profileID: UUID(),
@@ -150,7 +154,8 @@ struct ServerProcessControllerTests {
         )
         let controller = ServerProcessController(
             launcher: launcher,
-            healthChecker: StaticHealthChecker(result: .ready)
+            healthChecker: StaticHealthChecker(result: .ready),
+            endpointChecker: StaticEndpointChecker(result: .available)
         )
         let invocation = try makeInvocation()
 
@@ -196,7 +201,8 @@ struct ServerProcessControllerTests {
             launcher: FakeServerProcessLauncher(handles: [handle]),
             healthChecker: StaticHealthChecker(
                 result: .unavailable(reason: "connection refused")
-            )
+            ),
+            endpointChecker: StaticEndpointChecker(result: .available)
         )
         let invocation = try makeInvocation()
         let startTask = Task {
@@ -225,6 +231,37 @@ struct ServerProcessControllerTests {
         #expect(await handle.terminateCount == 1)
     }
 
+    @Test("rejects an occupied endpoint before launching")
+    func rejectsOccupiedEndpoint() async throws {
+        let reason = "127.0.0.1:8080 is already in use."
+        let launcher = FakeServerProcessLauncher(handles: [])
+        let controller = ServerProcessController(
+            launcher: launcher,
+            healthChecker: StaticHealthChecker(result: .ready),
+            endpointChecker: StaticEndpointChecker(
+                result: .unavailable(reason: reason)
+            )
+        )
+
+        await #expect(
+            throws: ServerProcessError.endpointUnavailable(
+                host: "127.0.0.1",
+                port: 8_080,
+                reason: reason
+            )
+        ) {
+            try await controller.start(
+                profileID: UUID(),
+                runtimeID: "custom:test",
+                invocation: try makeInvocation(),
+                host: "127.0.0.1",
+                port: 8_080
+            )
+        }
+        #expect(await launcher.recordedInvocations().isEmpty)
+        #expect(await controller.snapshot().state == .stopped)
+    }
+
     private func makeInvocation() throws -> ProcessInvocation {
         try ProcessInvocation(
             executableURL: URL(filePath: "/custom/bin/llama-server"),
@@ -234,6 +271,17 @@ struct ServerProcessControllerTests {
                 "--port", "8080",
             ]
         )
+    }
+}
+
+private struct StaticEndpointChecker: ServerEndpointChecking {
+    let result: ServerEndpointAvailability
+
+    func check(
+        host: String,
+        port: UInt16
+    ) -> ServerEndpointAvailability {
+        result
     }
 }
 
