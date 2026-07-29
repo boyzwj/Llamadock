@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct OverviewView: View {
+    @Environment(AppModel.self) private var appModel
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -13,33 +15,85 @@ struct OverviewView: View {
                 ) {
                     SummaryCard(
                         title: "Runtime",
-                        value: "Not configured",
+                        value: runtimeSummary,
                         systemImage: "shippingbox"
                     )
                     SummaryCard(
                         title: "Models",
-                        value: "No models",
+                        value: appModel.selectedModelURL?.lastPathComponent
+                            ?? "No model selected",
                         systemImage: "externaldrive"
                     )
                     SummaryCard(
                         title: "Server",
-                        value: "Stopped",
+                        value: serverSummary,
                         systemImage: "server.rack"
                     )
                 }
 
-                ContentUnavailableView(
-                    "Set Up LlamaDock",
-                    systemImage: "sparkles",
-                    description: Text(
-                        "Add a llama.cpp runtime and a GGUF model to start a local server."
+                ContentUnavailableView {
+                    Label("Local llama.cpp Control Plane", systemImage: "sparkles")
+                } description: {
+                    Text(
+                        setupDescription
                     )
-                )
+                } actions: {
+                    if appModel.selectedRuntime == nil {
+                        Button("Open Runtimes") {
+                            appModel.selectedSection = .runtimes
+                        }
+                    } else if appModel.profile == nil {
+                        Button("Open Models") {
+                            appModel.selectedSection = .models
+                        }
+                    } else {
+                        Button("Open Servers") {
+                            appModel.selectedSection = .servers
+                        }
+                    }
+                }
                 .frame(maxWidth: .infinity, minHeight: 260)
             }
             .padding(28)
         }
         .navigationTitle("Overview")
+    }
+
+    private var runtimeSummary: String {
+        guard let runtime = appModel.selectedRuntime else {
+            return "Not configured"
+        }
+        return runtime.versionOutput
+            .split(separator: "\n")
+            .first
+            .map(String.init) ?? runtime.source.rawValue
+    }
+
+    private var serverSummary: String {
+        switch appModel.serverSnapshot.state {
+        case .stopped:
+            "Stopped"
+        case .starting:
+            "Starting"
+        case .ready:
+            "Ready"
+        case .degraded:
+            "Degraded"
+        case .failed:
+            "Failed"
+        case .stopping:
+            "Stopping"
+        }
+    }
+
+    private var setupDescription: String {
+        if appModel.selectedRuntime == nil {
+            return "Add or install a llama.cpp runtime to begin."
+        }
+        if appModel.profile == nil {
+            return "Choose a local GGUF model and create its launch profile."
+        }
+        return "Review the generated command, then start the owned llama-server process."
     }
 }
 
@@ -73,5 +127,6 @@ private struct SummaryCard: View {
 
 #Preview {
     OverviewView()
+        .environment(AppModel())
         .frame(width: 800, height: 600)
 }

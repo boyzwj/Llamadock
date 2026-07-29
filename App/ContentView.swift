@@ -17,6 +17,23 @@ struct ContentView: View {
             detail
         }
         .frame(minWidth: 900, minHeight: 600)
+        .alert(
+            "LlamaDock",
+            isPresented: Binding(
+                get: { appModel.visibleError != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        appModel.visibleError = nil
+                    }
+                }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                appModel.visibleError = nil
+            }
+        } message: {
+            Text(appModel.visibleError ?? "An unexpected error occurred.")
+        }
     }
 
     @ViewBuilder
