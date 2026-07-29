@@ -235,7 +235,9 @@ struct HuggingFaceModelsView: View {
     private var gatedNotice: some View {
         Label {
             Text(
-                "This repository requires a Hugging Face token with access. LlamaDock has not sent any credentials."
+                appModel.isHuggingFaceTokenConfigured
+                    ? "A Keychain token was used for this Hub request. Repository access still depends on the token owner's accepted terms and permissions."
+                    : "This repository requires a Hugging Face token with access. Add one in Settings; LlamaDock has not sent any credentials."
             )
         } icon: {
             Image(systemName: "lock.trianglebadge.exclamationmark")

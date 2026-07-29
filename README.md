@@ -36,9 +36,11 @@ shell-free.
 Milestone 4 is in progress. The Models screen can already search public
 Hugging Face GGUF repositories, normalize repository URLs and `llama -hf`
 references, page through the real file tree, and group quantizations, split
-artifacts, vision projectors, and draft models. Downloads remain deliberately
-disabled until their persistent resume and verification path is complete. The
-full core suite currently has 103 tests across 28 suites.
+artifacts, vision projectors, and draft models. Optional Hub credentials are
+masked in the UI and stored only as a macOS Keychain generic password.
+Downloads remain deliberately disabled until their persistent resume and
+verification path is complete. The full core suite currently has 107 tests
+across 30 suites.
 
 ## Requirements
 
@@ -111,6 +113,17 @@ xcrun swift test \
 
 The test is skipped unless both `LLAMADOCK_HF_SMOKE_*` variables are present.
 
+The Keychain adapter also has an opt-in smoke that writes, replaces, reads, and
+removes an isolated synthetic item:
+
+```bash
+LLAMADOCK_KEYCHAIN_SMOKE=1 \
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+xcrun swift test \
+  --package-path Packages/LlamadockCore \
+  --filter RealHuggingFaceKeychainSmokeTests
+```
+
 ## Managed runtime storage
 
 LlamaDock owns a transparent runtime directory under
@@ -129,8 +142,7 @@ Selected, Roll Back, and Copy Diagnostics controls are available in Runtimes.
 ## Current limitations
 
 - Managed runtime deletion and automatic retention pruning are not exposed yet.
-  Hugging Face token storage and resumable model downloads are Milestone 4
-  work in progress.
+  Resumable Hugging Face model downloads are Milestone 4 work in progress.
 - Runtime and model files remain in their original locations. Moving or deleting
   them makes the saved profile invalid until a replacement is selected.
 - The app currently uses a 30-second cold-probe budget because first launch of

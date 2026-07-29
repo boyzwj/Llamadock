@@ -30,6 +30,8 @@ final class AppModel {
     var isSearchingHuggingFace = false
     var isLoadingHuggingFaceRepository = false
     var huggingFaceError: String?
+    var isHuggingFaceTokenConfigured = false
+    var huggingFaceCredentialError: String?
     var profiles: [LaunchProfile] = []
     var selectedProfileID: UUID?
     var profile: LaunchProfile? {
@@ -82,6 +84,7 @@ final class AppModel {
     private let modelDirectoryStore: JSONModelDirectoryStore
     private let modelScanner: LocalModelScanner
     private let huggingFaceClient: any HuggingFaceHubServing
+    private let huggingFaceTokenStore: any HuggingFaceTokenStoring
     private let serverController: ServerProcessController
     private let userDefaults: UserDefaults
     private var didBootstrap = false
@@ -107,7 +110,10 @@ final class AppModel {
         managedRuntimeInstaller: ManagedRuntimeInstaller? = nil,
         modelDirectoryStore: JSONModelDirectoryStore? = nil,
         modelScanner: LocalModelScanner = LocalModelScanner(),
-        huggingFaceClient: (any HuggingFaceHubServing)? = nil
+        huggingFaceClient: (any HuggingFaceHubServing)? = nil,
+        huggingFaceTokenStore: (
+            any HuggingFaceTokenStoring
+        )? = nil
     ) {
         self.runtimeDiscovery = runtimeDiscovery
         self.runtimeProbe = runtimeProbe
@@ -137,6 +143,8 @@ final class AppModel {
         self.modelScanner = modelScanner
         self.huggingFaceClient = huggingFaceClient
             ?? HuggingFaceHubClient()
+        self.huggingFaceTokenStore = huggingFaceTokenStore
+            ?? KeychainHuggingFaceTokenStore()
 
         let registry: any ManagedRuntimeRegistering
         if let managedRuntimeRegistry {
@@ -188,6 +196,7 @@ final class AppModel {
         isBootstrapping = true
         defer { isBootstrapping = false }
 
+        refreshHuggingFaceTokenState()
         await refreshRuntimes()
 
         do {
@@ -631,10 +640,11 @@ final class AppModel {
                 reference = nil
             }
 
+            let token = try huggingFaceTokenStore.token()
             let repositories = try await huggingFaceClient.searchModels(
                 query: reference?.repositoryID ?? query,
                 limit: 50,
-                token: nil
+                token: token
             )
             if let reference {
                 let exactRepository = repositories.first {
@@ -660,7 +670,8 @@ final class AppModel {
                 }
                 selectedHuggingFaceRepositoryID = exactRepository.id
                 try await loadHuggingFaceCatalog(
-                    reference: reference
+                    reference: reference,
+                    token: token
                 )
             } else {
                 huggingFaceRepositories = repositories
@@ -669,7 +680,8 @@ final class AppModel {
                     try await loadHuggingFaceCatalog(
                         reference: HuggingFaceRepositoryReference(
                             repositoryID: repository.id
-                        )
+                        ),
+                        token: token
                     )
                 } else {
                     huggingFaceReference = nil
@@ -697,7 +709,8 @@ final class AppModel {
             try await loadHuggingFaceCatalog(
                 reference: HuggingFaceRepositoryReference(
                     repositoryID: id
-                )
+                ),
+                token: try huggingFaceTokenStore.token()
             )
         } catch {
             huggingFaceError = error.localizedDescription
@@ -708,6 +721,42 @@ final class AppModel {
         _ id: String?
     ) {
         selectedHuggingFaceArtifactID = id
+    }
+
+    func refreshHuggingFaceTokenState() {
+        do {
+            isHuggingFaceTokenConfigured = try huggingFaceTokenStore
+                .token() != nil
+            huggingFaceCredentialError = nil
+        } catch {
+            isHuggingFaceTokenConfigured = false
+            huggingFaceCredentialError = error.localizedDescription
+        }
+    }
+
+    @discardableResult
+    func saveHuggingFaceToken(
+        _ token: String
+    ) -> Bool {
+        do {
+            try huggingFaceTokenStore.saveToken(token)
+            isHuggingFaceTokenConfigured = true
+            huggingFaceCredentialError = nil
+            return true
+        } catch {
+            huggingFaceCredentialError = error.localizedDescription
+            return false
+        }
+    }
+
+    func deleteHuggingFaceToken() {
+        do {
+            try huggingFaceTokenStore.deleteToken()
+            isHuggingFaceTokenConfigured = false
+            huggingFaceCredentialError = nil
+        } catch {
+            huggingFaceCredentialError = error.localizedDescription
+        }
     }
 
     func createProfile(
@@ -1029,7 +1078,8 @@ final class AppModel {
     }
 
     private func loadHuggingFaceCatalog(
-        reference: HuggingFaceRepositoryReference
+        reference: HuggingFaceRepositoryReference,
+        token: String?
     ) async throws {
         isLoadingHuggingFaceRepository = true
         huggingFaceReference = reference
@@ -1039,7 +1089,7 @@ final class AppModel {
 
         let files = try await huggingFaceClient.repositoryFiles(
             reference: reference,
-            token: nil
+            token: token
         )
         let catalog = HuggingFaceFileCatalogBuilder().makeCatalog(
             files: files
