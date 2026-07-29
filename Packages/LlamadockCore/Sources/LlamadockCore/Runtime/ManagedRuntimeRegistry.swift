@@ -84,6 +84,10 @@ public enum ManagedRuntimeRegistryError:
     case pathOutsideRuntimeRoot(URL)
     case runtimeNotFound(String)
     case noPreviousRuntime
+    case activeRuntimeCannotBeRemoved(String)
+    case previousRuntimeCannotBeRemoved(String)
+    case runtimeInUse(String)
+    case runtimeRemovalFailed(id: String, reason: String)
 }
 
 extension ManagedRuntimeRegistryError: LocalizedError {
@@ -99,6 +103,17 @@ extension ManagedRuntimeRegistryError: LocalizedError {
             "Managed runtime was not found: \(id)"
         case .noPreviousRuntime:
             "No previous managed runtime is available for rollback."
+        case .activeRuntimeCannotBeRemoved(let id):
+            "The active managed runtime cannot be removed: \(id)"
+        case .previousRuntimeCannotBeRemoved(let id):
+            """
+            The previous managed runtime is retained for rollback and cannot \
+            be removed: \(id)
+            """
+        case .runtimeInUse(let id):
+            "A running LlamaDock server is using this runtime: \(id)"
+        case .runtimeRemovalFailed(let id, let reason):
+            "Managed runtime \(id) could not be removed: \(reason)"
         }
     }
 }
@@ -108,6 +123,10 @@ public protocol ManagedRuntimeRegistering: Sendable {
     func register(_ record: ManagedRuntimeRecord) async throws
     func activate(_ id: String) async throws
     func rollback() async throws
+    func remove(
+        _ id: String,
+        protectedRuntimeIDs: Set<String>
+    ) async throws
 }
 
 public actor JSONManagedRuntimeRegistry:
@@ -204,6 +223,63 @@ public actor JSONManagedRuntimeRegistry:
         try save(document)
     }
 
+    public func remove(
+        _ id: String,
+        protectedRuntimeIDs: Set<String>
+    ) throws {
+        let original = try loadDocument()
+        guard
+            let record = original.installations.first(
+                where: { $0.id == id }
+            )
+        else {
+            throw ManagedRuntimeRegistryError.runtimeNotFound(id)
+        }
+        guard original.activeRuntimeID != id else {
+            throw ManagedRuntimeRegistryError
+                .activeRuntimeCannotBeRemoved(id)
+        }
+        guard original.previousRuntimeID != id else {
+            throw ManagedRuntimeRegistryError
+                .previousRuntimeCannotBeRemoved(id)
+        }
+        guard !protectedRuntimeIDs.contains(id) else {
+            throw ManagedRuntimeRegistryError.runtimeInUse(id)
+        }
+
+        try validate(record)
+        var updated = original
+        updated.installations.removeAll { $0.id == id }
+        try save(updated)
+
+        guard ownedPathExists(record.installDirectory) else {
+            return
+        }
+        do {
+            try fileManager.removeItem(
+                at: record.installDirectory
+            )
+        } catch {
+            do {
+                try save(original)
+            } catch let restoreError {
+                throw ManagedRuntimeRegistryError
+                    .runtimeRemovalFailed(
+                        id: id,
+                        reason: """
+                            \(error.localizedDescription). Registry rollback \
+                            also failed: \(restoreError.localizedDescription)
+                            """
+                    )
+            }
+            throw ManagedRuntimeRegistryError
+                .runtimeRemovalFailed(
+                    id: id,
+                    reason: error.localizedDescription
+                )
+        }
+    }
+
     private func loadDocument() throws -> RegistryDocument {
         guard fileManager.fileExists(atPath: fileURL.path) else {
             return RegistryDocument(
@@ -295,6 +371,17 @@ public actor JSONManagedRuntimeRegistry:
             throw ManagedRuntimeRegistryError
                 .pathOutsideRuntimeRoot(installDirectory)
         }
+        guard
+            installDirectory.lastPathComponent
+                == "\(record.tag)-macos-arm64"
+        else {
+            throw ManagedRuntimeRegistryError.invalidRecord(
+                id: record.id,
+                reason: """
+                    install directory name does not match the runtime
+                    """
+            )
+        }
         for url in [record.llamaURL, record.serverURL] {
             let path = url.standardizedFileURL.path
             guard path.hasPrefix(installDirectory.path + "/") else {
@@ -347,6 +434,17 @@ public actor JSONManagedRuntimeRegistry:
             try? fileManager.removeItem(at: temporaryURL)
             throw error
         }
+    }
+
+    private func ownedPathExists(
+        _ url: URL
+    ) -> Bool {
+        if fileManager.fileExists(atPath: url.path) {
+            return true
+        }
+        return (try? fileManager.attributesOfItem(
+            atPath: url.path
+        )) != nil
     }
 }
 

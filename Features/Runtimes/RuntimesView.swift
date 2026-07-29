@@ -4,6 +4,8 @@ import SwiftUI
 
 struct RuntimesView: View {
     @Environment(AppModel.self) private var appModel
+    @State private var pendingRuntimeRemoval:
+        ManagedRuntimeRecord?
 
     var body: some View {
         @Bindable var appModel = appModel
@@ -75,6 +77,41 @@ struct RuntimesView: View {
                 }
             }
         }
+        .confirmationDialog(
+            "Delete Managed Runtime?",
+            isPresented: Binding(
+                get: { pendingRuntimeRemoval != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingRuntimeRemoval = nil
+                    }
+                }
+            ),
+            presenting: pendingRuntimeRemoval
+        ) { runtime in
+            Button(
+                "Delete \(runtime.tag)",
+                role: .destructive
+            ) {
+                pendingRuntimeRemoval = nil
+                Task {
+                    await appModel.removeManagedRuntime(
+                        id: runtime.id
+                    )
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingRuntimeRemoval = nil
+            }
+        } message: { runtime in
+            Text(
+                """
+                This permanently removes \(runtime.tag) from LlamaDock's \
+                managed runtime directory. The active and previous runtimes \
+                are always retained for service continuity and rollback.
+                """
+            )
+        }
     }
 
     private var managedRuntimePanel: some View {
@@ -91,9 +128,9 @@ struct RuntimesView: View {
 
                 Spacer()
 
-                if
-                    appModel.isCheckingRuntimeUpdates
-                        || appModel.isInstallingRuntime
+                if appModel.isCheckingRuntimeUpdates
+                    || appModel
+                        .isManagedRuntimeOperationInProgress
                 {
                     ProgressView()
                         .controlSize(.small)
@@ -175,7 +212,8 @@ struct RuntimesView: View {
                 }
                 .disabled(
                     appModel.isCheckingRuntimeUpdates
-                        || appModel.isInstallingRuntime
+                        || appModel
+                            .isManagedRuntimeOperationInProgress
                 )
 
                 Button(
@@ -189,8 +227,7 @@ struct RuntimesView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(
-                    appModel.isInstallingRuntime
-                        || !appModel.canChangeManagedRuntime
+                    !appModel.canChangeManagedRuntime
                         || appModel.isLatestManagedRuntimeInstalled
                 )
 
@@ -205,7 +242,6 @@ struct RuntimesView: View {
                         || appModel.selectedManagedRuntimeID
                             == appModel.managedRuntimeSnapshot
                                 .activeRuntimeID
-                        || appModel.isInstallingRuntime
                         || !appModel.canChangeManagedRuntime
                 )
 
@@ -217,8 +253,27 @@ struct RuntimesView: View {
                 .disabled(
                     appModel.managedRuntimeSnapshot
                         .previousRuntimeID == nil
-                        || appModel.isInstallingRuntime
                         || !appModel.canChangeManagedRuntime
+                )
+
+                Button(role: .destructive) {
+                    pendingRuntimeRemoval =
+                        appModel.selectedManagedRuntimeRecord
+                } label: {
+                    Label(
+                        "Delete Selected",
+                        systemImage: "trash"
+                    )
+                }
+                .disabled(
+                    !appModel.canRemoveSelectedManagedRuntime
+                )
+                .help(
+                    appModel
+                        .selectedManagedRuntimeRemovalBlockReason
+                        ?? """
+                        Permanently delete this inactive managed runtime.
+                        """
                 )
 
                 Spacer()

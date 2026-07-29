@@ -485,4 +485,33 @@ private actor InstallerRegistry: ManagedRuntimeRegistering {
             previousRuntimeID: currentSnapshot.activeRuntimeID
         )
     }
+
+    func remove(
+        _ id: String,
+        protectedRuntimeIDs: Set<String>
+    ) throws {
+        guard currentSnapshot.installations.contains(
+            where: { $0.id == id }
+        ) else {
+            throw ManagedRuntimeRegistryError.runtimeNotFound(id)
+        }
+        guard currentSnapshot.activeRuntimeID != id else {
+            throw ManagedRuntimeRegistryError
+                .activeRuntimeCannotBeRemoved(id)
+        }
+        guard currentSnapshot.previousRuntimeID != id else {
+            throw ManagedRuntimeRegistryError
+                .previousRuntimeCannotBeRemoved(id)
+        }
+        guard !protectedRuntimeIDs.contains(id) else {
+            throw ManagedRuntimeRegistryError.runtimeInUse(id)
+        }
+        currentSnapshot = ManagedRuntimeRegistrySnapshot(
+            installations: currentSnapshot.installations.filter {
+                $0.id != id
+            },
+            activeRuntimeID: currentSnapshot.activeRuntimeID,
+            previousRuntimeID: currentSnapshot.previousRuntimeID
+        )
+    }
 }

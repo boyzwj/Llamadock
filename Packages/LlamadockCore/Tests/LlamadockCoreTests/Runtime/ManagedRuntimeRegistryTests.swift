@@ -115,6 +115,233 @@ struct ManagedRuntimeRegistryTests {
         }
     }
 
+    @Test("rejects a managed record that points at a reserved owned child")
+    func rejectsReservedOwnedChild() async {
+        let root = makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let registry = JSONManagedRuntimeRegistry(
+            fileURL: root.appending(path: "registry.json"),
+            runtimesRoot: root
+        )
+        let record = makeRecord(
+            build: 10_175,
+            runtimesRoot: root
+        )
+        let dangerousDirectory = root.appending(
+            path: "downloads",
+            directoryHint: .isDirectory
+        )
+        let dangerous = ManagedRuntimeRecord(
+            id: record.id,
+            tag: record.tag,
+            build: record.build,
+            architecture: record.architecture,
+            installDirectory: dangerousDirectory,
+            llamaURL: dangerousDirectory.appending(path: "llama"),
+            serverURL: dangerousDirectory.appending(
+                path: "llama-server"
+            ),
+            installedAt: record.installedAt,
+            validatedAt: record.validatedAt,
+            versionOutput: record.versionOutput,
+            archiveSHA256: record.archiveSHA256
+        )
+
+        await #expect(
+            throws: ManagedRuntimeRegistryError.invalidRecord(
+                id: dangerous.id,
+                reason: "install directory name does not match the runtime"
+            )
+        ) {
+            try await registry.register(dangerous)
+        }
+    }
+
+    @Test("removes an unused managed runtime and its owned directory")
+    func removesUnusedRuntime() async throws {
+        let root = makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let registry = JSONManagedRuntimeRegistry(
+            fileURL: root.appending(path: "registry.json"),
+            runtimesRoot: root
+        )
+        let active = makeRecord(
+            build: 10_175,
+            runtimesRoot: root
+        )
+        let previous = makeRecord(
+            build: 10_176,
+            runtimesRoot: root
+        )
+        let unused = makeRecord(
+            build: 10_177,
+            runtimesRoot: root
+        )
+        for record in [active, previous, unused] {
+            try createRuntimeDirectory(for: record)
+            try await registry.register(record)
+        }
+        try await registry.activate(previous.id)
+        try await registry.activate(active.id)
+
+        try await registry.remove(
+            unused.id,
+            protectedRuntimeIDs: []
+        )
+
+        let snapshot = try await registry.snapshot()
+        #expect(snapshot.installations == [active, previous])
+        #expect(snapshot.activeRuntimeID == active.id)
+        #expect(snapshot.previousRuntimeID == previous.id)
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: unused.installDirectory.path
+            )
+        )
+        #expect(
+            FileManager.default.fileExists(
+                atPath: active.installDirectory.path
+            )
+        )
+    }
+
+    @Test("refuses to remove active, previous, or in-use runtimes")
+    func refusesProtectedRuntimeRemoval() async throws {
+        let root = makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let registry = JSONManagedRuntimeRegistry(
+            fileURL: root.appending(path: "registry.json"),
+            runtimesRoot: root
+        )
+        let active = makeRecord(
+            build: 10_175,
+            runtimesRoot: root
+        )
+        let previous = makeRecord(
+            build: 10_176,
+            runtimesRoot: root
+        )
+        let inUse = makeRecord(
+            build: 10_177,
+            runtimesRoot: root
+        )
+        for record in [active, previous, inUse] {
+            try createRuntimeDirectory(for: record)
+            try await registry.register(record)
+        }
+        try await registry.activate(previous.id)
+        try await registry.activate(active.id)
+        let before = try await registry.snapshot()
+
+        await #expect(
+            throws: ManagedRuntimeRegistryError
+                .activeRuntimeCannotBeRemoved(active.id)
+        ) {
+            try await registry.remove(
+                active.id,
+                protectedRuntimeIDs: []
+            )
+        }
+        await #expect(
+            throws: ManagedRuntimeRegistryError
+                .previousRuntimeCannotBeRemoved(previous.id)
+        ) {
+            try await registry.remove(
+                previous.id,
+                protectedRuntimeIDs: []
+            )
+        }
+        await #expect(
+            throws: ManagedRuntimeRegistryError
+                .runtimeInUse(inUse.id)
+        ) {
+            try await registry.remove(
+                inUse.id,
+                protectedRuntimeIDs: [inUse.id]
+            )
+        }
+
+        #expect(try await registry.snapshot() == before)
+        for record in [active, previous, inUse] {
+            #expect(
+                FileManager.default.fileExists(
+                    atPath: record.installDirectory.path
+                )
+            )
+        }
+    }
+
+    @Test("unknown removal leaves the registry unchanged")
+    func unknownRemovalIsNonDestructive() async throws {
+        let root = makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let registry = JSONManagedRuntimeRegistry(
+            fileURL: root.appending(path: "registry.json"),
+            runtimesRoot: root
+        )
+        let record = makeRecord(
+            build: 10_175,
+            runtimesRoot: root
+        )
+        try createRuntimeDirectory(for: record)
+        try await registry.register(record)
+        let before = try await registry.snapshot()
+        let missingID = "managed:b99999:macos-arm64"
+
+        await #expect(
+            throws: ManagedRuntimeRegistryError
+                .runtimeNotFound(missingID)
+        ) {
+            try await registry.remove(
+                missingID,
+                protectedRuntimeIDs: []
+            )
+        }
+
+        #expect(try await registry.snapshot() == before)
+        #expect(
+            FileManager.default.fileExists(
+                atPath: record.installDirectory.path
+            )
+        )
+    }
+
+    @Test("removes a stale registry entry whose owned directory is gone")
+    func removesMissingOwnedDirectoryRecord() async throws {
+        let root = makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let registry = JSONManagedRuntimeRegistry(
+            fileURL: root.appending(path: "registry.json"),
+            runtimesRoot: root
+        )
+        let record = makeRecord(
+            build: 10_175,
+            runtimesRoot: root
+        )
+        try await registry.register(record)
+
+        try await registry.remove(
+            record.id,
+            protectedRuntimeIDs: []
+        )
+
+        #expect(
+            try await registry.snapshot().installations.isEmpty
+        )
+    }
+
+    private func createRuntimeDirectory(
+        for record: ManagedRuntimeRecord
+    ) throws {
+        try FileManager.default.createDirectory(
+            at: record.installDirectory,
+            withIntermediateDirectories: true
+        )
+        try Data("runtime".utf8).write(
+            to: record.serverURL
+        )
+    }
+
     private func makeRoot() -> URL {
         FileManager.default.temporaryDirectory
             .appending(

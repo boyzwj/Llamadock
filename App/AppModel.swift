@@ -75,6 +75,8 @@ final class AppModel {
     var isCheckingRuntimeUpdates = false
     var isCheckingAppUpdates = false
     var isInstallingRuntime = false
+    var isRemovingRuntime = false
+    var isChangingManagedRuntime = false
     var isRefreshingModels = false
     var isServerOperationInProgress = false
     var visibleError: String?
@@ -478,6 +480,8 @@ final class AppModel {
             return
         }
 
+        isChangingManagedRuntime = true
+        defer { isChangingManagedRuntime = false }
         do {
             try await managedRuntimeRegistry.activate(id)
             await refreshRuntimes()
@@ -498,6 +502,8 @@ final class AppModel {
             return
         }
 
+        isChangingManagedRuntime = true
+        defer { isChangingManagedRuntime = false }
         do {
             try await managedRuntimeRegistry.rollback()
             let snapshot = try await managedRuntimeRegistry.snapshot()
@@ -506,6 +512,38 @@ final class AppModel {
         } catch {
             visibleError = """
                 Could not roll back the managed runtime: \
+                \(error.localizedDescription)
+            """
+        }
+    }
+
+    func removeManagedRuntime(
+        id: String
+    ) async {
+        guard
+            !isManagedRuntimeOperationInProgress,
+            !isServerOperationInProgress
+        else {
+            return
+        }
+        guard managedRuntimeSnapshot.installations.contains(
+            where: { $0.id == id }
+        ) else {
+            visibleError = "The selected managed runtime is no longer installed."
+            return
+        }
+
+        isRemovingRuntime = true
+        defer { isRemovingRuntime = false }
+        do {
+            try await managedRuntimeRegistry.remove(
+                id,
+                protectedRuntimeIDs: runtimeIDsInUse
+            )
+            await refreshRuntimes()
+        } catch {
+            visibleError = """
+                Could not delete the managed runtime: \
                 \(error.localizedDescription)
                 """
         }
@@ -1164,6 +1202,16 @@ final class AppModel {
     }
 
     func startServer() async {
+        guard !isServerOperationInProgress else {
+            return
+        }
+        guard !isManagedRuntimeOperationInProgress else {
+            visibleError = """
+                Wait for the managed runtime operation to finish before \
+                starting a server.
+                """
+            return
+        }
         guard let runtime = selectedRuntime else {
             visibleError = "Choose a validated llama.cpp runtime first."
             return
@@ -1218,6 +1266,7 @@ final class AppModel {
     var canStartServer: Bool {
         guard
             !isServerOperationInProgress,
+            !isManagedRuntimeOperationInProgress,
             selectedRuntime != nil,
             profile != nil
         else {
@@ -1553,7 +1602,13 @@ final class AppModel {
     }
 
     var canChangeManagedRuntime: Bool {
-        switch serverSnapshot.state {
+        guard
+            !isServerOperationInProgress,
+            !isManagedRuntimeOperationInProgress
+        else {
+            return false
+        }
+        return switch serverSnapshot.state {
         case .stopped, .failed:
             true
         case .starting, .ready, .degraded, .stopping:
@@ -1571,6 +1626,61 @@ final class AppModel {
             return nil
         }
         return selectedRuntimeID
+    }
+
+    var selectedManagedRuntimeRecord: ManagedRuntimeRecord? {
+        guard let selectedManagedRuntimeID else {
+            return nil
+        }
+        return managedRuntimeSnapshot.installations.first {
+            $0.id == selectedManagedRuntimeID
+        }
+    }
+
+    var canRemoveSelectedManagedRuntime: Bool {
+        selectedManagedRuntimeRemovalBlockReason == nil
+    }
+
+    var selectedManagedRuntimeRemovalBlockReason: String? {
+        guard let id = selectedManagedRuntimeID else {
+            return "Choose an installed managed runtime first."
+        }
+        if isManagedRuntimeOperationInProgress {
+            return "Wait for the current runtime operation to finish."
+        }
+        if isServerOperationInProgress {
+            return "Wait for the current server operation to finish."
+        }
+        if managedRuntimeSnapshot.activeRuntimeID == id {
+            return "The active runtime cannot be deleted."
+        }
+        if managedRuntimeSnapshot.previousRuntimeID == id {
+            return """
+                The previous runtime is retained for one-click rollback.
+                """
+        }
+        if runtimeIDsInUse.contains(id) {
+            return "A running LlamaDock server is using this runtime."
+        }
+        return nil
+    }
+
+    var isManagedRuntimeOperationInProgress: Bool {
+        isInstallingRuntime
+            || isRemovingRuntime
+            || isChangingManagedRuntime
+    }
+
+    private var runtimeIDsInUse: Set<String> {
+        switch serverSnapshot.state {
+        case .starting, .ready, .degraded, .stopping:
+            if let runtimeID = serverSnapshot.run?.runtimeID {
+                return [runtimeID]
+            }
+        case .stopped, .failed:
+            break
+        }
+        return []
     }
 
     var appVersion: String {
