@@ -8,10 +8,14 @@ The project follows the architecture and milestones in [DESIGN.md](DESIGN.md).
 
 ## Status
 
-Milestone 0 establishes the buildable SwiftUI shell, the Foundation-only
-`LlamadockCore` package, tests, CI, and project documentation. Runtime discovery,
-model selection, and server management begin in Milestone 1; the disabled controls
-in the current UI intentionally do not claim those capabilities yet.
+Milestone 0 is complete. Milestone 1 now provides the external-runtime vertical
+slice: Homebrew and custom runtime discovery, capability probes, local GGUF
+selection, readable JSON profiles, exact launch-command previews, one owned
+`llama-server` process, bounded redacted logs, health polling, and WebUI access.
+
+The Milestone 1 acceptance gate remains open until the full
+start → ready → OpenAI-compatible API → stop flow is qualified with a real small
+GGUF model and no orphaned process.
 
 ## Requirements
 
