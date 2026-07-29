@@ -104,6 +104,11 @@ public enum LogRedactor {
         )
         redacted = replacing(
             in: redacted,
+            pattern: #"(?i)\bhf_[A-Za-z0-9_-]{8,}\b"#,
+            template: "<redacted-hf-token>"
+        )
+        redacted = replacing(
+            in: redacted,
             pattern: #"(https?://[^\s?]+)\?[^\s]+"#,
             template: "$1?<redacted>"
         )

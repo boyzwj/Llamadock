@@ -45,11 +45,18 @@ then atomically imported without overwriting existing files. Completion creates
 and selects a launch Profile, including companion paths, and reconciliation
 repairs a missing Profile after an interrupted app exit.
 
-The full core suite currently has 124 tests across 35 suites. The Milestone 4
+The full core suite currently has 128 tests across 37 suites. The Milestone 4
 real-delivery qualification downloaded `stories15M-q4_0.gguf` through the
 production transport, verified and imported it, generated a Profile, started
 official `llama.cpp` b10176, completed an OpenAI-compatible request, and stopped
 without leaving its port occupied.
+
+Milestone 5 is in progress. The app now reports version `1.0.0`, checks this
+project's GitHub Releases separately from `llama.cpp` runtime updates, and can
+copy a comprehensive redacted diagnostic report without credentials, prompts,
+launch arguments, or server log contents. The release boundary is explicitly
+non-sandboxed with Hardened Runtime; public artifacts still require Developer
+ID signing and Apple notarization.
 
 ## Requirements
 
@@ -198,6 +205,13 @@ Selected, Roll Back, and Copy Diagnostics controls are available in Runtimes.
   an official macOS runtime can initialize platform backends slowly.
 - Development builds are unsigned. Release signing, notarization, packaging,
   update delivery, and release qualification are Milestone 5 work.
+
+## Privacy and release security
+
+LlamaDock has no analytics, advertising, telemetry, or hosted account service.
+See [PRIVACY.md](PRIVACY.md) for local storage, network, diagnostic, and deletion
+behavior. The v1 signing, sandbox, and update boundary is recorded in
+[ADR 0007](docs/adr/0007-release-security-and-update-boundary.md).
 
 ## Repository layout
 
