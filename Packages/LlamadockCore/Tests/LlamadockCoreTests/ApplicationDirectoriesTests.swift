@@ -16,5 +16,19 @@ struct ApplicationDirectoriesTests {
         #expect(directories.downloads == root.appending(path: "downloads", directoryHint: .isDirectory))
         #expect(directories.logs == root.appending(path: "logs", directoryHint: .isDirectory))
         #expect(directories.cache == root.appending(path: "cache", directoryHint: .isDirectory))
+        #expect(
+            directories.githubCache
+                == root.appending(
+                    path: "cache/github",
+                    directoryHint: .isDirectory
+                )
+        )
+        #expect(
+            directories.latestRuntimeReleaseCache
+                == root.appending(
+                    path: "cache/github/latest-runtime-release.json",
+                    directoryHint: .notDirectory
+                )
+        )
     }
 }

@@ -35,4 +35,15 @@ public struct ApplicationDirectories: Sendable {
     public var cache: URL {
         root.appending(path: "cache", directoryHint: .isDirectory)
     }
+
+    public var githubCache: URL {
+        cache.appending(path: "github", directoryHint: .isDirectory)
+    }
+
+    public var latestRuntimeReleaseCache: URL {
+        githubCache.appending(
+            path: "latest-runtime-release.json",
+            directoryHint: .notDirectory
+        )
+    }
 }
