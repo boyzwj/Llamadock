@@ -5,7 +5,7 @@ inspectable evidence. A checked item means its product behavior is implemented
 and has automated or recorded real-runtime evidence. It does not replace the
 signed-candidate and two-machine record in `release-qualification.md`.
 
-Last source audit: 2026-07-29.
+Last source audit: 2026-07-30.
 
 ## Runtime
 
@@ -48,7 +48,9 @@ Last source audit: 2026-07-29.
   complete split groups, companion roles, conflicts, and atomic group import.
 - [x] Ordinary files remain Finder-manageable: external models are scanned in
   place, imported Hub artifacts use readable directories, and Reveal in Finder
-  is available.
+  is available. Explicit deletion moves exactly one validated GGUF inside an
+  approved root to the system Trash; symlinks and owned-server files are
+  rejected.
 
 ## Profiles
 
@@ -83,8 +85,8 @@ Last source audit: 2026-07-29.
 
 ## Release
 
-- [x] Swift tests and unsigned App builds pass: the current suite contains 137
-  tests in 38 suites, and CI runs both Core tests and the macOS App build.
+- [x] Swift tests and unsigned App builds pass: the current suite contains 144
+  tests in 39 suites, and CI runs both Core tests and the macOS App build.
 - [ ] Developer ID signature and Apple notarization: implementation and
   fail-closed automation exist, but credentials and a successful candidate run
   are still pending.

@@ -16,7 +16,7 @@ or inferred evidence.
 
 ## Automated gates
 
-- [x] 137 Core tests pass.
+- [x] 144 Core tests pass.
 - [x] Debug and unsigned arm64 Release App builds pass.
 - [x] Release-contract verification passes.
 - [ ] Developer ID signature and Hardened Runtime verified.

@@ -45,7 +45,7 @@ then atomically imported without overwriting existing files. Completion creates
 and selects a launch Profile, including companion paths, and reconciliation
 repairs a missing Profile after an interrupted app exit.
 
-The full core suite currently has 137 tests across 38 suites. The Milestone 4
+The full core suite currently has 144 tests across 39 suites. The Milestone 4
 real-delivery qualification downloaded `stories15M-q4_0.gguf` through the
 production transport, verified and imported it, generated a Profile, started
 official `llama.cpp` b10176, completed an OpenAI-compatible request, and stopped
@@ -67,6 +67,10 @@ App also has a complete native macOS AppIcon asset set. Inactive App-owned
 managed runtimes can be deleted after a destructive confirmation; the active
 runtime, rollback version, and any runtime used by an owned server are
 protected in both the UI and registry transaction.
+Local GGUF files can likewise be moved to the macOS Trash after an exact-target
+confirmation. The operation is restricted to approved model roots, never
+follows a symlink, warns about saved Profile references, and refuses a main or
+companion file used by the owned server.
 
 ## Requirements
 

@@ -40,7 +40,7 @@ struct ServersView: View {
                 Button("Restart", systemImage: "arrow.clockwise") {
                     Task { await appModel.restartServer() }
                 }
-                .disabled(!appModel.canStopServer)
+                .disabled(!appModel.canRestartServer)
             }
         }
     }

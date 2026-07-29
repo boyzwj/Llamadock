@@ -59,6 +59,14 @@ digests, and bounded GGUF structure before atomically importing files.
 Split GGUF sets, an optional vision projector (`mmproj`), and an optional draft
 model are grouped into one Profile.
 
+Use **Move to Trash** from the selected model, toolbar, or context menu to
+remove one GGUF file through the macOS Trash. The confirmation names the exact
+file and reports how many saved Profiles still reference it. LlamaDock never
+deletes the containing folder or sibling split/companion files, refuses paths
+outside approved roots and symlinks, and will not trash a main or companion
+file used by its running server. Restore the file from Trash or update affected
+Profiles before starting them again.
+
 For gated or private repositories, enter a Hugging Face token in Settings. The
 token is stored as a macOS Keychain generic password, masked in the UI, never
 written to Profiles or diagnostics, and removed when you clear it.

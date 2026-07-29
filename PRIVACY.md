@@ -42,7 +42,12 @@ models remain user-owned.
 Removing the Hugging Face token deletes its Keychain item. Other LlamaDock data
 can be removed by deleting `~/Library/Application Support/Llamadock/` after
 stopping the app and any server it owns. Models in external user-selected
-directories are not deleted by that action.
+directories are not deleted by that action. When the user explicitly chooses
+**Move to Trash** for one library entry, LlamaDock validates that the target is
+a regular GGUF file inside an approved model root and asks for confirmation
+before moving only that file to the macOS Trash. It does not follow symlinks,
+delete the containing folder, or delete a model or companion used by its
+running server.
 
 ## Contact
 

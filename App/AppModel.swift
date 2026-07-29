@@ -78,6 +78,7 @@ final class AppModel {
     var isRemovingRuntime = false
     var isChangingManagedRuntime = false
     var isRefreshingModels = false
+    var isTrashingModel = false
     var isServerOperationInProgress = false
     var visibleError: String?
 
@@ -92,6 +93,8 @@ final class AppModel {
     private let applicationDirectories: ApplicationDirectories
     private let modelDirectoryStore: JSONModelDirectoryStore
     private let modelScanner: LocalModelScanner
+    private let modelRemovalPlanner: LocalModelRemovalPlanner
+    private let modelTrasher: any LocalModelTrashing
     private let huggingFaceClient: any HuggingFaceHubServing
     private let huggingFaceTokenStore: any HuggingFaceTokenStoring
     private let modelDownloadManager: ModelDownloadManager
@@ -104,6 +107,7 @@ final class AppModel {
     private var runtimeInstallMonitorTask: Task<Void, Never>?
     private var modelDownloadMonitorTask: Task<Void, Never>?
     private var serverModelSecurityScopes: [URL] = []
+    private var serverModelURLs: [URL] = []
     private var observedCompletedDownloadIDs: Set<UUID> = []
 
     init(
@@ -127,6 +131,9 @@ final class AppModel {
         managedRuntimeInstaller: ManagedRuntimeInstaller? = nil,
         modelDirectoryStore: JSONModelDirectoryStore? = nil,
         modelScanner: LocalModelScanner = LocalModelScanner(),
+        modelRemovalPlanner: LocalModelRemovalPlanner =
+            LocalModelRemovalPlanner(),
+        modelTrasher: (any LocalModelTrashing)? = nil,
         huggingFaceClient: (any HuggingFaceHubServing)? = nil,
         huggingFaceTokenStore: (
             any HuggingFaceTokenStoring
@@ -162,6 +169,9 @@ final class AppModel {
                 fileURL: directories.settings
             )
         self.modelScanner = modelScanner
+        self.modelRemovalPlanner = modelRemovalPlanner
+        self.modelTrasher = modelTrasher
+            ?? FileManagerLocalModelTrasher()
         self.huggingFaceClient = huggingFaceClient
             ?? HuggingFaceHubClient()
         let tokenStore = huggingFaceTokenStore
@@ -713,6 +723,78 @@ final class AppModel {
         }
     }
 
+    func moveLocalModelToTrash(
+        id: String
+    ) async {
+        guard
+            !isTrashingModel,
+            !isRefreshingModels,
+            !isServerOperationInProgress
+        else {
+            return
+        }
+        guard let model = localModels.first(
+            where: { $0.id == id }
+        ) else {
+            visibleError = "The selected model is no longer in the library."
+            return
+        }
+
+        let plan: LocalModelRemovalPlan
+        do {
+            plan = try modelRemovalPlanner.makePlan(
+                model: model,
+                approvedRoots: [
+                    applicationDirectories.models
+                ] + modelDirectories.map(\.url),
+                protectedModelURLs: serverModelURLs
+            )
+        } catch {
+            visibleError = """
+                Could not prepare the model for Trash: \
+                \(error.localizedDescription)
+                """
+            return
+        }
+
+        let externalRoot = modelDirectories.first {
+            canonicalPath($0.url.path)
+                == canonicalPath(plan.rootURL.path)
+        }?.url
+        let didStartSecurityScope =
+            externalRoot?
+            .startAccessingSecurityScopedResource()
+                ?? false
+        isTrashingModel = true
+        defer {
+            if didStartSecurityScope {
+                externalRoot?
+                    .stopAccessingSecurityScopedResource()
+            }
+            isTrashingModel = false
+        }
+
+        do {
+            try await modelTrasher.moveToTrash(
+                plan.targetURL
+            )
+            if
+                selectedModelURL.map({
+                    canonicalPath($0.path)
+                }) == canonicalPath(plan.targetURL.path)
+            {
+                selectedModelURL = nil
+            }
+            await refreshModels()
+            refreshCommandPreview()
+        } catch {
+            visibleError = """
+                Could not move the model to Trash: \
+                \(error.localizedDescription)
+                """
+        }
+    }
+
     func selectLibraryModel(
         _ id: String?
     ) {
@@ -1205,6 +1287,13 @@ final class AppModel {
         guard !isServerOperationInProgress else {
             return
         }
+        guard !isTrashingModel else {
+            visibleError = """
+                Wait for the model Trash operation to finish before \
+                starting a server.
+                """
+            return
+        }
         guard !isManagedRuntimeOperationInProgress else {
             visibleError = """
                 Wait for the managed runtime operation to finish before \
@@ -1267,6 +1356,7 @@ final class AppModel {
         guard
             !isServerOperationInProgress,
             !isManagedRuntimeOperationInProgress,
+            !isTrashingModel,
             selectedRuntime != nil,
             profile != nil
         else {
@@ -1289,6 +1379,13 @@ final class AppModel {
         }
     }
 
+    var canRestartServer: Bool {
+        canStopServer
+            && !isTrashingModel
+            && !isManagedRuntimeOperationInProgress
+            && !isServerOperationInProgress
+    }
+
     func stopServer() async {
         isServerOperationInProgress = true
         defer { isServerOperationInProgress = false }
@@ -1301,6 +1398,13 @@ final class AppModel {
     }
 
     func restartServer() async {
+        guard canRestartServer else {
+            visibleError = """
+                Wait for the current model or runtime operation to finish \
+                before restarting the server.
+                """
+            return
+        }
         await stopServer()
         await startServer()
     }
@@ -1328,6 +1432,42 @@ final class AppModel {
         return modelScanSnapshot?.models.first {
             $0.id == selectedLibraryModelID
         }
+    }
+
+    func localModelTrashBlockReason(
+        _ model: LocalModelFile
+    ) -> String? {
+        if isTrashingModel || isRefreshingModels {
+            return "Wait for the current model operation to finish."
+        }
+        if isServerOperationInProgress {
+            return "Wait for the current server operation to finish."
+        }
+        let modelPath = canonicalPath(model.url.path)
+        if serverModelURLs.contains(
+            where: { canonicalPath($0.path) == modelPath }
+        ) {
+            return "A running LlamaDock server is using this model."
+        }
+        return nil
+    }
+
+    func profileReferenceCount(
+        for model: LocalModelFile
+    ) -> Int {
+        let modelPath = canonicalPath(model.url.path)
+        return profiles.filter { profile in
+            [
+                profile.model.mainPath,
+                profile.model.mmprojPath,
+                profile.model.draftPath,
+            ]
+            .compactMap { $0 }
+            .contains {
+                canonicalPath($0) == modelPath
+            }
+        }
+        .count
     }
 
     var localModels: [LocalModelFile] {
@@ -2217,6 +2357,13 @@ final class AppModel {
             profile.model.mmprojPath,
             profile.model.draftPath,
         ].compactMap { $0 }
+        serverModelURLs = modelPaths.map {
+            URL(
+                filePath: $0,
+                directoryHint: .notDirectory
+            )
+            .standardizedFileURL
+        }
         let roots = Set(
             modelPaths.compactMap { modelPath in
                 let normalizedModelPath = normalizedPath(
@@ -2248,6 +2395,7 @@ final class AppModel {
             root.stopAccessingSecurityScopedResource()
         }
         serverModelSecurityScopes = []
+        serverModelURLs = []
     }
 
     private func normalizedPath(
