@@ -262,6 +262,51 @@ struct ServerProcessControllerTests {
         #expect(await controller.snapshot().state == .stopped)
     }
 
+    @Test("publishes metrics only for the owned process")
+    func publishesOwnedProcessMetrics() async throws {
+        let handle = FakeManagedProcessHandle(
+            processIdentifier: 4_249
+        )
+        let metrics = ServerProcessMetrics(
+            sampledAt: .distantPast,
+            cpuPercent: 42,
+            residentMemoryBytes: 1_024,
+            virtualMemoryBytes: 2_048,
+            threadCount: 3
+        )
+        let reader = StaticProcessMetricsReader(
+            metrics: metrics
+        )
+        let controller = ServerProcessController(
+            launcher: FakeServerProcessLauncher(
+                handles: [handle]
+            ),
+            healthChecker: StaticHealthChecker(
+                result: .ready
+            ),
+            endpointChecker: StaticEndpointChecker(
+                result: .available
+            ),
+            metricsReader: reader
+        )
+
+        try await controller.start(
+            profileID: UUID(),
+            runtimeID: "custom:test",
+            invocation: try makeInvocation(),
+            host: "127.0.0.1",
+            port: 8_080,
+            readinessTimeout: .seconds(1)
+        )
+
+        #expect(await controller.snapshot().metrics == metrics)
+        #expect(reader.sampledProcessIdentifiers == [4_249])
+
+        await controller.stop()
+        #expect(await controller.snapshot().metrics == nil)
+        #expect(reader.resetCount >= 2)
+    }
+
     private func makeInvocation() throws -> ProcessInvocation {
         try ProcessInvocation(
             executableURL: URL(filePath: "/custom/bin/llama-server"),
@@ -360,5 +405,49 @@ private actor StaticHealthChecker: ServerHealthChecking {
 
     func check(baseURL: URL) -> HealthCheckResult {
         result
+    }
+}
+
+private final class StaticProcessMetricsReader:
+    ProcessMetricsReading,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private let metrics: ServerProcessMetrics
+    private var sampledIDs: [Int32] = []
+    private var resets = 0
+
+    init(
+        metrics: ServerProcessMetrics
+    ) {
+        self.metrics = metrics
+    }
+
+    func sample(
+        processIdentifier: Int32,
+        now: Date
+    ) -> ServerProcessMetrics? {
+        lock.lock()
+        sampledIDs.append(processIdentifier)
+        lock.unlock()
+        return metrics
+    }
+
+    func reset() {
+        lock.lock()
+        resets += 1
+        lock.unlock()
+    }
+
+    var sampledProcessIdentifiers: [Int32] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sampledIDs
+    }
+
+    var resetCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return resets
     }
 }

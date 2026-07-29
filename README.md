@@ -45,7 +45,7 @@ then atomically imported without overwriting existing files. Completion creates
 and selects a launch Profile, including companion paths, and reconciliation
 repairs a missing Profile after an interrupted app exit.
 
-The full core suite currently has 128 tests across 37 suites. The Milestone 4
+The full core suite currently has 132 tests across 38 suites. The Milestone 4
 real-delivery qualification downloaded `stories15M-q4_0.gguf` through the
 production transport, verified and imported it, generated a Profile, started
 official `llama.cpp` b10176, completed an OpenAI-compatible request, and stopped
@@ -55,8 +55,12 @@ Milestone 5 is in progress. The app now reports version `1.0.0`, checks this
 project's GitHub Releases separately from `llama.cpp` runtime updates, and can
 copy a comprehensive redacted diagnostic report without credentials, prompts,
 launch arguments, or server log contents. The release boundary is explicitly
-non-sandboxed with Hardened Runtime; public artifacts still require Developer
-ID signing and Apple notarization.
+non-sandboxed with Hardened Runtime. The owned server view and diagnostics now
+report bounded PID-specific CPU, resident memory, thread count, and uptime;
+task counters are sampled at a two-second cadence while log changes reach the UI
+in 500 ms batches. Primary server controls, status, metrics, and logs expose
+VoiceOver semantics. Public artifacts still require Developer ID signing and
+Apple notarization.
 
 ## Requirements
 

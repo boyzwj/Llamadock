@@ -1789,6 +1789,49 @@ final class AppModel {
                     run.baseURL.absoluteString
                 )
             )
+            entries.append(
+                DiagnosticsEntry(
+                    "Uptime Seconds",
+                    String(
+                        max(
+                            Int(
+                                Date().timeIntervalSince(
+                                    run.processStartTime
+                                )
+                            ),
+                            0
+                        )
+                    )
+                )
+            )
+        }
+        if let metrics = serverSnapshot.metrics {
+            entries.append(
+                DiagnosticsEntry(
+                    "CPU Percent",
+                    metrics.cpuPercent.map {
+                        String(format: "%.1f", $0)
+                    } ?? "sampling"
+                )
+            )
+            entries.append(
+                DiagnosticsEntry(
+                    "Resident Memory Bytes",
+                    String(metrics.residentMemoryBytes)
+                )
+            )
+            entries.append(
+                DiagnosticsEntry(
+                    "Virtual Memory Bytes",
+                    String(metrics.virtualMemoryBytes)
+                )
+            )
+            entries.append(
+                DiagnosticsEntry(
+                    "Threads",
+                    String(metrics.threadCount)
+                )
+            )
         }
         return entries
     }
@@ -2018,7 +2061,14 @@ final class AppModel {
                     break
                 }
 
-                try? await Task.sleep(for: .milliseconds(200))
+                let refreshInterval: Duration
+                switch snapshot.state {
+                case .ready, .degraded:
+                    refreshInterval = .milliseconds(500)
+                case .starting, .stopping, .failed, .stopped:
+                    refreshInterval = .milliseconds(200)
+                }
+                try? await Task.sleep(for: refreshInterval)
             }
         }
     }
