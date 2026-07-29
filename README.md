@@ -97,6 +97,8 @@ Signed release prerequisites, repository secrets, packaging, notarization, and
 rollback procedures are documented in [RELEASE.md](RELEASE.md). Release
 qualification evidence is recorded in
 [docs/release-qualification.md](docs/release-qualification.md).
+Installation, runtime/model/Profile setup, shortcuts, diagnostics, privacy, and
+troubleshooting are covered in [docs/user-guide.md](docs/user-guide.md).
 
 ## Real-runtime smoke test
 
