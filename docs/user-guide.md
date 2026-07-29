@@ -36,6 +36,13 @@ available for **Roll Back**. Runtime updates never update the LlamaDock App.
 
 Stop a running server before switching or installing a runtime.
 
+To reclaim storage, select an older managed release and choose **Delete
+Selected**. LlamaDock shows a system destructive confirmation and only removes
+the exact App-owned runtime directory recorded in its validated registry. The
+active release, the previous rollback release, and a release used by a running
+owned server cannot be deleted. Homebrew and custom runtimes are never deleted
+by LlamaDock.
+
 ## 2. Add a model
 
 Open **Models** and choose one path:

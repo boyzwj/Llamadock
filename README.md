@@ -45,7 +45,7 @@ then atomically imported without overwriting existing files. Completion creates
 and selects a launch Profile, including companion paths, and reconciliation
 repairs a missing Profile after an interrupted app exit.
 
-The full core suite currently has 132 tests across 38 suites. The Milestone 4
+The full core suite currently has 137 tests across 38 suites. The Milestone 4
 real-delivery qualification downloaded `stories15M-q4_0.gguf` through the
 production transport, verified and imported it, generated a Profile, started
 official `llama.cpp` b10176, completed an OpenAI-compatible request, and stopped
@@ -63,7 +63,10 @@ VoiceOver semantics. Public artifacts still require Developer ID signing and
 Apple notarization. A tag-triggered release workflow now enforces Developer ID,
 Hardened Runtime, notarization, stapling, Gatekeeper assessment, arm64-only
 packaging, dSYMs, and SHA-256 checks before it can create a GitHub Release. The
-App also has a complete native macOS AppIcon asset set.
+App also has a complete native macOS AppIcon asset set. Inactive App-owned
+managed runtimes can be deleted after a destructive confirmation; the active
+runtime, rollback version, and any runtime used by an owned server are
+protected in both the UI and registry transaction.
 
 ## Requirements
 
@@ -97,6 +100,8 @@ Signed release prerequisites, repository secrets, packaging, notarization, and
 rollback procedures are documented in [RELEASE.md](RELEASE.md). Release
 qualification evidence is recorded in
 [docs/release-qualification.md](docs/release-qualification.md).
+The requirement-by-requirement source and test mapping is maintained in
+[docs/v1-acceptance-audit.md](docs/v1-acceptance-audit.md).
 Installation, runtime/model/Profile setup, shortcuts, diagnostics, privacy, and
 troubleshooting are covered in [docs/user-guide.md](docs/user-guide.md).
 
@@ -206,11 +211,13 @@ LlamaDock owns a transparent runtime directory under
 The app checks for updates at most once per day by default, restores a validated
 release cache without a network request between checks, and never switches a
 running LlamaDock server. Manual Check Updates, Install & Activate, Activate
-Selected, Roll Back, and Copy Diagnostics controls are available in Runtimes.
+Selected, Roll Back, Delete Selected, and Copy Diagnostics controls are
+available in Runtimes.
 
 ## Current limitations
 
-- Managed runtime deletion and automatic retention pruning are not exposed yet.
+- Automatic retention pruning is not enabled. Active and previous versions are
+  retained; older inactive managed versions can be deleted explicitly.
 - Downloads use one URLSession stream per file. Configurable multi-segment Range
   concurrency remains a post-v1 performance enhancement.
 - Runtime and model files remain in their original locations. Moving or deleting

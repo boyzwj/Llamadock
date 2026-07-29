@@ -7,8 +7,8 @@ or inferred evidence.
 
 - Version: `1.0.0`
 - Build: `1`
-- Git commit: `1ce3eae9696589eec930981694ee0aa650ecf1dd`
-- Git tag: `v1.0.0`
+- Git commit: pending (record the exact qualified `main` SHA)
+- Git tag: pending (create `v1.0.0` only after candidate qualification)
 - GitHub Actions release candidate run: pending
 - GitHub Actions release run: pending
 - ZIP SHA-256: pending
@@ -16,7 +16,7 @@ or inferred evidence.
 
 ## Automated gates
 
-- [x] 132 Core tests pass.
+- [x] 137 Core tests pass.
 - [x] Debug and unsigned arm64 Release App builds pass.
 - [x] Release-contract verification passes.
 - [ ] Developer ID signature and Hardened Runtime verified.
