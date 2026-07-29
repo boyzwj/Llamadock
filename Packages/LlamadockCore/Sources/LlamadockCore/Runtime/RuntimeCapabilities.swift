@@ -5,6 +5,12 @@ public enum CapabilityDetection: String, Codable, Sendable {
     case unknown
 }
 
+public enum RuntimeFlagSupport: String, Codable, Equatable, Sendable {
+    case supported
+    case unsupported
+    case unknown
+}
+
 public struct RuntimeCapabilities: Codable, Equatable, Sendable {
     public let supportedFlags: Set<String>
     public let rawHelpHash: String
@@ -30,6 +36,17 @@ public struct RuntimeCapabilities: Codable, Equatable, Sendable {
         self.supportsPropsEndpoint = supportsPropsEndpoint
         self.detectedAt = detectedAt
         self.detection = detection
+    }
+
+    public func support(
+        for flag: String
+    ) -> RuntimeFlagSupport {
+        guard detection == .detected else {
+            return .unknown
+        }
+        return supportedFlags.contains(flag)
+            ? .supported
+            : .unsupported
     }
 }
 

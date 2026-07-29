@@ -38,6 +38,8 @@ struct RuntimeCapabilitiesParserTests {
         #expect(capabilities.supportsPropsEndpoint)
         #expect(capabilities.detectedAt == detectedAt)
         #expect(capabilities.rawHelpHash.count == 16)
+        #expect(capabilities.support(for: "--ctx-size") == .supported)
+        #expect(capabilities.support(for: "--unknown-flag") == .unsupported)
     }
 
     @Test("marks an unrecognized help format as unknown")
@@ -52,6 +54,7 @@ struct RuntimeCapabilitiesParserTests {
         #expect(!capabilities.supportsWebUI)
         #expect(!capabilities.supportsMetrics)
         #expect(!capabilities.supportsPropsEndpoint)
+        #expect(capabilities.support(for: "--model") == .unknown)
     }
 
     @Test("uses a stable hash for the same raw help")

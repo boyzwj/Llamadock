@@ -236,10 +236,18 @@ struct ModelsView: View {
                     metadataCard(model)
 
                     if
-                        let profile = appModel.profile,
-                        profile.model.mainPath == model.url.path
+                        model.validation == .valid,
+                        model.role == .main
                     {
-                        profileEditor
+                        profilesCard(model)
+
+                        if appModel.profiles(for: model).contains(
+                            where: {
+                                $0.id == appModel.selectedProfileID
+                            }
+                        ) {
+                            profileEditor
+                        }
                     }
                 }
                 .padding(22)
@@ -364,62 +372,440 @@ struct ModelsView: View {
         }
     }
 
-    private var profileEditor: some View {
-        GroupBox("Launch Profile") {
-            Form {
-                TextField("Profile Name", text: profileNameBinding)
+    private func profilesCard(
+        _ model: LocalModelFile
+    ) -> some View {
+        let modelProfiles = appModel.profiles(for: model)
 
-                Section("Server") {
-                    TextField("Host", text: hostBinding)
-                    TextField("Port", value: portBinding, format: .number)
-                    TextField(
-                        "Context Size (0 = runtime default)",
-                        value: contextSizeBinding,
-                        format: .number
+        return GroupBox("Profiles") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Picker(
+                        "Profile",
+                        selection: Binding(
+                            get: {
+                                modelProfiles.contains(
+                                    where: {
+                                        $0.id == appModel.selectedProfileID
+                                    }
+                                )
+                                    ? appModel.selectedProfileID
+                                    : nil
+                            },
+                            set: { appModel.selectProfile($0) }
+                        )
+                    ) {
+                        Text("Choose a profile")
+                            .tag(nil as UUID?)
+                        ForEach(modelProfiles) { profile in
+                            Text(profile.name)
+                                .tag(Optional(profile.id))
+                        }
+                    }
+                    .disabled(modelProfiles.isEmpty)
+
+                    Button("New", systemImage: "plus") {
+                        appModel.createProfile(for: model)
+                    }
+
+                    Button("Duplicate", systemImage: "plus.square.on.square") {
+                        appModel.duplicateSelectedProfile()
+                    }
+                    .disabled(
+                        !modelProfiles.contains(
+                            where: {
+                                $0.id == appModel.selectedProfileID
+                            }
+                        )
                     )
-                    TextField(
-                        "GPU Layers (0 = runtime default)",
-                        value: gpuLayersBinding,
-                        format: .number
+
+                    Button(
+                        "Delete",
+                        systemImage: "trash",
+                        role: .destructive
+                    ) {
+                        Task {
+                            await appModel.deleteSelectedProfile()
+                        }
+                    }
+                    .disabled(
+                        !modelProfiles.contains(
+                            where: {
+                                $0.id == appModel.selectedProfileID
+                            }
+                        )
                     )
-                    TextField(
-                        "Threads (0 = runtime default)",
-                        value: threadsBinding,
-                        format: .number
-                    )
+
+                    Menu {
+                        Button("Import Profile…", systemImage: "square.and.arrow.down") {
+                            importProfile()
+                        }
+                        Button("Export Selected Profile…", systemImage: "square.and.arrow.up") {
+                            exportProfile()
+                        }
+                        .disabled(
+                            !modelProfiles.contains(
+                                where: {
+                                    $0.id == appModel.selectedProfileID
+                                }
+                            )
+                        )
+                    } label: {
+                        Label("More", systemImage: "ellipsis.circle")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                 }
 
-                Section("Extra Arguments") {
-                    TextEditor(text: extraArgumentsBinding)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 80)
+                if modelProfiles.isEmpty {
                     Text(
-                        "Enter one argument token per line. Tokens are never interpreted by a shell."
+                        "Create a profile to configure and launch this model."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Text(
+                        "\(modelProfiles.count) saved \(modelProfiles.count == 1 ? "profile" : "profiles"). The most recently edited profile appears first."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
+            }
+            .padding(.top, 4)
+        }
+    }
 
-                Section("Generated Command") {
-                    if let command = appModel.commandPreview {
-                        Text(command)
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
-                        Button("Copy Command", systemImage: "doc.on.doc") {
-                            copy(command)
+    private var profileEditor: some View {
+        GroupBox("Launch Profile") {
+            VStack(alignment: .leading, spacing: 12) {
+                capabilitySummary
+
+                Form {
+                    Section("Identity and Models") {
+                        TextField("Profile Name", text: profileNameBinding)
+
+                        capabilityField("Model Path", flag: "--model") {
+                            Text(appModel.profile?.model.mainPath ?? "")
+                                .font(.system(.body, design: .monospaced))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
                         }
-                    } else {
-                        Label(
-                            appModel.commandError
-                                ?? "Choose a validated runtime.",
-                            systemImage: "exclamationmark.triangle"
+
+                        capabilityField("Alias", flag: "--alias") {
+                            TextField(
+                                "Runtime default",
+                                text: aliasBinding
+                            )
+                        }
+
+                        capabilityField("Vision Projector", flag: "--mmproj") {
+                            companionPathControls(
+                                path: appModel.profile?.model.mmprojPath,
+                                title: "Choose a Vision Projector",
+                                set: {
+                                    $0.model.mmprojPath = $1
+                                }
+                            )
+                        }
+
+                        capabilityField("Draft Model", flag: "--model-draft") {
+                            companionPathControls(
+                                path: appModel.profile?.model.draftPath,
+                                title: "Choose a Draft Model",
+                                set: {
+                                    $0.model.draftPath = $1
+                                }
+                            )
+                        }
+                    }
+
+                    Section("Network") {
+                        capabilityField("Host", flag: "--host") {
+                            TextField("Host", text: hostBinding)
+                        }
+                        capabilityField("Port", flag: "--port") {
+                            TextField(
+                                "Port",
+                                value: portBinding,
+                                format: .number
+                            )
+                        }
+                    }
+
+                    Section("Performance") {
+                        optionalIntegerField(
+                            "Context Size",
+                            flag: "--ctx-size",
+                            binding: contextSizeBinding
                         )
-                        .foregroundStyle(.orange)
+                        optionalIntegerField(
+                            "GPU Layers",
+                            flag: "--n-gpu-layers",
+                            binding: gpuLayersBinding
+                        )
+                        optionalIntegerField(
+                            "Threads",
+                            flag: "--threads",
+                            binding: threadsBinding
+                        )
+                        optionalIntegerField(
+                            "Parallel Slots",
+                            flag: "--parallel",
+                            binding: parallelBinding
+                        )
+                        optionalIntegerField(
+                            "Batch Size",
+                            flag: "--batch-size",
+                            binding: batchSizeBinding
+                        )
+                        optionalIntegerField(
+                            "Micro Batch Size",
+                            flag: "--ubatch-size",
+                            binding: ubatchSizeBinding
+                        )
+
+                        capabilityField(
+                            "Flash Attention",
+                            flag: "--flash-attn"
+                        ) {
+                            Picker(
+                                "Flash Attention",
+                                selection: flashAttentionBinding
+                            ) {
+                                ForEach(OptionalBooleanChoice.allCases) {
+                                    Text($0.title).tag($0)
+                                }
+                            }
+                            .labelsHidden()
+                        }
+
+                        capabilityField("KV Cache K", flag: "--cache-type-k") {
+                            TextField(
+                                "Runtime default",
+                                text: cacheTypeKBinding
+                            )
+                        }
+                        capabilityField("KV Cache V", flag: "--cache-type-v") {
+                            TextField(
+                                "Runtime default",
+                                text: cacheTypeVBinding
+                            )
+                        }
+                    }
+
+                    Section("Sampling") {
+                        optionalDecimalField(
+                            "Temperature",
+                            flag: "--temp",
+                            binding: temperatureBinding
+                        )
+                        optionalIntegerField(
+                            "Top K",
+                            flag: "--top-k",
+                            binding: topKBinding
+                        )
+                        optionalDecimalField(
+                            "Top P",
+                            flag: "--top-p",
+                            binding: topPBinding
+                        )
+                        optionalDecimalField(
+                            "Min P",
+                            flag: "--min-p",
+                            binding: minPBinding
+                        )
+                        optionalDecimalField(
+                            "Repeat Penalty",
+                            flag: "--repeat-penalty",
+                            binding: repeatPenaltyBinding
+                        )
+                        optionalIntegerField(
+                            "Seed",
+                            flag: "--seed",
+                            binding: seedBinding
+                        )
+                    }
+
+                    Section("System Prompt") {
+                        capabilityField(
+                            "Prompt",
+                            flag: "--system-prompt"
+                        ) {
+                            TextEditor(text: systemPromptBinding)
+                                .frame(minHeight: 70)
+                        }
+                    }
+
+                    Section("Extra Arguments") {
+                        TextEditor(text: extraArgumentsBinding)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minHeight: 80)
+                        Text(
+                            "Enter one argument token per line. Tokens are passed directly to llama-server and are never interpreted by a shell."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+
+                    Section("Generated Command") {
+                        if let command = appModel.commandPreview {
+                            Text(command)
+                                .font(.system(.body, design: .monospaced))
+                                .textSelection(.enabled)
+                            Button("Copy Command", systemImage: "doc.on.doc") {
+                                copy(command)
+                            }
+                        } else {
+                            Label(
+                                appModel.commandError
+                                    ?? "Choose a validated runtime.",
+                                systemImage: "exclamationmark.triangle"
+                            )
+                            .foregroundStyle(.orange)
+                        }
+                    }
+                }
+                .formStyle(.grouped)
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    @ViewBuilder
+    private var capabilitySummary: some View {
+        if let runtime = appModel.selectedRuntime {
+            let unsupported = configuredFlags.filter {
+                runtime.capabilities.support(for: $0) == .unsupported
+            }
+            if !unsupported.isEmpty {
+                Label(
+                    "The selected runtime does not support: \(unsupported.joined(separator: ", ")). Remove those values or choose another runtime.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .foregroundStyle(.orange)
+            } else if runtime.capabilities.detection == .unknown {
+                Label(
+                    "This runtime's help output could not be recognized. Typed settings are marked Unknown and will still be passed through.",
+                    systemImage: "questionmark.diamond"
+                )
+                .foregroundStyle(.secondary)
+            } else {
+                Label(
+                    "Configured typed settings are supported by the selected runtime.",
+                    systemImage: "checkmark.circle.fill"
+                )
+                .foregroundStyle(.green)
+            }
+        } else {
+            Label(
+                "Choose a validated runtime to check parameter support.",
+                systemImage: "questionmark.diamond"
+            )
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private func capabilityField<Content: View>(
+        _ title: String,
+        flag: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        LabeledContent {
+            HStack {
+                content()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                CapabilitySupportBadge(
+                    support: appModel.selectedRuntime?.capabilities.support(
+                        for: flag
+                    ) ?? .unknown
+                )
+            }
+        } label: {
+            Text(title)
+        }
+    }
+
+    private func optionalIntegerField(
+        _ title: String,
+        flag: String,
+        binding: Binding<String>
+    ) -> some View {
+        capabilityField(title, flag: flag) {
+            TextField("Runtime default", text: binding)
+        }
+    }
+
+    private func optionalDecimalField(
+        _ title: String,
+        flag: String,
+        binding: Binding<String>
+    ) -> some View {
+        capabilityField(title, flag: flag) {
+            TextField("Runtime default", text: binding)
+        }
+    }
+
+    private func companionPathControls(
+        path: String?,
+        title: String,
+        set: @escaping (inout LaunchProfile, String?) -> Void
+    ) -> some View {
+        HStack {
+            Text(path ?? "Not configured")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(path == nil ? .secondary : .primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+
+            Button("Choose…") {
+                chooseCompanion(title: title, set: set)
+            }
+
+            if path != nil {
+                Button("Clear") {
+                    appModel.updateProfile {
+                        set(&$0, nil)
                     }
                 }
             }
-            .formStyle(.grouped)
         }
+    }
+
+    private var configuredFlags: [String] {
+        guard let profile = appModel.profile else {
+            return []
+        }
+
+        var flags = ["--model", "--host", "--port"]
+        let optionalFlags: [(String, Bool)] = [
+            ("--alias", profile.server.alias != nil),
+            ("--ctx-size", profile.server.contextSize != nil),
+            ("--n-gpu-layers", profile.server.gpuLayers != nil),
+            ("--threads", profile.server.threads != nil),
+            ("--parallel", profile.server.parallel != nil),
+            ("--batch-size", profile.server.batchSize != nil),
+            ("--ubatch-size", profile.server.ubatchSize != nil),
+            ("--flash-attn", profile.server.flashAttention != nil),
+            ("--cache-type-k", profile.server.cacheTypeK != nil),
+            ("--cache-type-v", profile.server.cacheTypeV != nil),
+            ("--system-prompt", profile.server.systemPrompt != nil),
+            ("--mmproj", profile.model.mmprojPath != nil),
+            ("--model-draft", profile.model.draftPath != nil),
+            ("--temp", profile.sampling.temperature != nil),
+            ("--top-k", profile.sampling.topK != nil),
+            ("--top-p", profile.sampling.topP != nil),
+            ("--min-p", profile.sampling.minP != nil),
+            ("--repeat-penalty", profile.sampling.repeatPenalty != nil),
+            ("--seed", profile.sampling.seed != nil),
+        ]
+        flags.append(
+            contentsOf: optionalFlags.compactMap {
+                $0.1 ? $0.0 : nil
+            }
+        )
+        return flags
     }
 
     private var filteredModels: [LocalModelFile] {
@@ -461,6 +847,13 @@ struct ModelsView: View {
         )
     }
 
+    private var aliasBinding: Binding<String> {
+        optionalTextBinding(
+            get: { $0.server.alias },
+            set: { $0.server.alias = $1 }
+        )
+    }
+
     private var portBinding: Binding<Int> {
         Binding(
             get: { Int(appModel.profile?.server.port ?? 8_080) },
@@ -473,24 +866,129 @@ struct ModelsView: View {
         )
     }
 
-    private var contextSizeBinding: Binding<Int> {
-        optionalPositiveIntegerBinding(
+    private var contextSizeBinding: Binding<String> {
+        optionalIntegerBinding(
             get: { $0.server.contextSize },
             set: { $0.server.contextSize = $1 }
         )
     }
 
-    private var gpuLayersBinding: Binding<Int> {
-        optionalPositiveIntegerBinding(
+    private var gpuLayersBinding: Binding<String> {
+        optionalIntegerBinding(
             get: { $0.server.gpuLayers },
             set: { $0.server.gpuLayers = $1 }
         )
     }
 
-    private var threadsBinding: Binding<Int> {
-        optionalPositiveIntegerBinding(
+    private var threadsBinding: Binding<String> {
+        optionalIntegerBinding(
             get: { $0.server.threads },
             set: { $0.server.threads = $1 }
+        )
+    }
+
+    private var parallelBinding: Binding<String> {
+        optionalIntegerBinding(
+            get: { $0.server.parallel },
+            set: { $0.server.parallel = $1 }
+        )
+    }
+
+    private var batchSizeBinding: Binding<String> {
+        optionalIntegerBinding(
+            get: { $0.server.batchSize },
+            set: { $0.server.batchSize = $1 }
+        )
+    }
+
+    private var ubatchSizeBinding: Binding<String> {
+        optionalIntegerBinding(
+            get: { $0.server.ubatchSize },
+            set: { $0.server.ubatchSize = $1 }
+        )
+    }
+
+    private var flashAttentionBinding: Binding<OptionalBooleanChoice> {
+        Binding(
+            get: {
+                switch appModel.profile?.server.flashAttention {
+                case true:
+                    .enabled
+                case false:
+                    .disabled
+                case nil:
+                    .runtimeDefault
+                }
+            },
+            set: { value in
+                appModel.updateProfile {
+                    $0.server.flashAttention = value.value
+                }
+            }
+        )
+    }
+
+    private var cacheTypeKBinding: Binding<String> {
+        optionalTextBinding(
+            get: { $0.server.cacheTypeK },
+            set: { $0.server.cacheTypeK = $1 }
+        )
+    }
+
+    private var cacheTypeVBinding: Binding<String> {
+        optionalTextBinding(
+            get: { $0.server.cacheTypeV },
+            set: { $0.server.cacheTypeV = $1 }
+        )
+    }
+
+    private var temperatureBinding: Binding<String> {
+        optionalDoubleBinding(
+            get: { $0.sampling.temperature },
+            set: { $0.sampling.temperature = $1 }
+        )
+    }
+
+    private var topKBinding: Binding<String> {
+        optionalIntegerBinding(
+            get: { $0.sampling.topK },
+            set: { $0.sampling.topK = $1 }
+        )
+    }
+
+    private var topPBinding: Binding<String> {
+        optionalDoubleBinding(
+            get: { $0.sampling.topP },
+            set: { $0.sampling.topP = $1 }
+        )
+    }
+
+    private var minPBinding: Binding<String> {
+        optionalDoubleBinding(
+            get: { $0.sampling.minP },
+            set: { $0.sampling.minP = $1 }
+        )
+    }
+
+    private var repeatPenaltyBinding: Binding<String> {
+        optionalDoubleBinding(
+            get: { $0.sampling.repeatPenalty },
+            set: { $0.sampling.repeatPenalty = $1 }
+        )
+    }
+
+    private var seedBinding: Binding<String> {
+        optionalIntegerBinding(
+            get: { $0.sampling.seed },
+            set: { $0.sampling.seed = $1 }
+        )
+    }
+
+    private var systemPromptBinding: Binding<String> {
+        optionalTextBinding(
+            get: { $0.server.systemPrompt },
+            set: { $0.server.systemPrompt = $1 },
+            trimmingWhitespace: false
         )
     }
 
@@ -508,22 +1006,74 @@ struct ModelsView: View {
         )
     }
 
-    private func optionalPositiveIntegerBinding(
-        get: @escaping (LaunchProfileProxy) -> Int?,
-        set: @escaping (inout LaunchProfileProxy, Int?) -> Void
-    ) -> Binding<Int> {
+    private func optionalTextBinding(
+        get: @escaping (LaunchProfile) -> String?,
+        set: @escaping (inout LaunchProfile, String?) -> Void,
+        trimmingWhitespace: Bool = true
+    ) -> Binding<String> {
         Binding(
             get: {
-                guard let profile = appModel.profile else {
-                    return 0
-                }
-                return get(LaunchProfileProxy(profile)) ?? 0
+                appModel.profile.flatMap(get) ?? ""
             },
             set: { value in
                 appModel.updateProfile { profile in
-                    var proxy = LaunchProfileProxy(profile)
-                    set(&proxy, value > 0 ? value : nil)
-                    profile = proxy.profile
+                    let candidate = trimmingWhitespace
+                        ? value.trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        )
+                        : value
+                    set(
+                        &profile,
+                        candidate.isEmpty ? nil : candidate
+                    )
+                }
+            }
+        )
+    }
+
+    private func optionalIntegerBinding(
+        get: @escaping (LaunchProfile) -> Int?,
+        set: @escaping (inout LaunchProfile, Int?) -> Void
+    ) -> Binding<String> {
+        Binding(
+            get: {
+                appModel.profile.flatMap(get).map {
+                    String($0)
+                } ?? ""
+            },
+            set: { value in
+                let candidate = value.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+                guard candidate.isEmpty || Int(candidate) != nil else {
+                    return
+                }
+                appModel.updateProfile {
+                    set(&$0, candidate.isEmpty ? nil : Int(candidate))
+                }
+            }
+        )
+    }
+
+    private func optionalDoubleBinding(
+        get: @escaping (LaunchProfile) -> Double?,
+        set: @escaping (inout LaunchProfile, Double?) -> Void
+    ) -> Binding<String> {
+        Binding(
+            get: {
+                appModel.profile.flatMap(get).map {
+                    String($0)
+                } ?? ""
+            },
+            set: { value in
+                let candidate = value.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+                guard candidate.isEmpty || Double(candidate) != nil else {
+                    return
+                }
+                appModel.updateProfile {
+                    set(&$0, candidate.isEmpty ? nil : Double(candidate))
                 }
             }
         )
@@ -570,6 +1120,67 @@ struct ModelsView: View {
             return
         }
         appModel.selectModel(url)
+    }
+
+    private func chooseCompanion(
+        title: String,
+        set: @escaping (inout LaunchProfile, String?) -> Void
+    ) {
+        let panel = NSOpenPanel()
+        panel.title = title
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        if let ggufType = UTType(filenameExtension: "gguf") {
+            panel.allowedContentTypes = [ggufType]
+        }
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return
+        }
+        appModel.updateProfile {
+            set(
+                &$0,
+                url.standardizedFileURL.path
+            )
+        }
+    }
+
+    private func importProfile() {
+        let panel = NSOpenPanel()
+        panel.title = "Import a LlamaDock Profile"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.json]
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return
+        }
+        Task {
+            await appModel.importProfile(from: url)
+        }
+    }
+
+    private func exportProfile() {
+        guard let profile = appModel.profile else {
+            return
+        }
+        let panel = NSSavePanel()
+        panel.title = "Export LlamaDock Profile"
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = profile.name.replacingOccurrences(
+            of: "/",
+            with: "-"
+        ) + ".json"
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return
+        }
+        Task {
+            await appModel.exportSelectedProfile(to: url)
+        }
     }
 
     private func reveal(
@@ -763,16 +1374,96 @@ private extension LocalModelRole {
     }
 }
 
-private struct LaunchProfileProxy {
-    var profile: LaunchProfile
+private enum OptionalBooleanChoice:
+    String,
+    CaseIterable,
+    Identifiable
+{
+    case runtimeDefault
+    case enabled
+    case disabled
 
-    init(_ profile: LaunchProfile) {
-        self.profile = profile
+    var id: String {
+        rawValue
     }
 
-    var server: ServerOptions {
-        get { profile.server }
-        set { profile.server = newValue }
+    var title: String {
+        switch self {
+        case .runtimeDefault:
+            "Runtime default"
+        case .enabled:
+            "On"
+        case .disabled:
+            "Off"
+        }
+    }
+
+    var value: Bool? {
+        switch self {
+        case .runtimeDefault:
+            nil
+        case .enabled:
+            true
+        case .disabled:
+            false
+        }
+    }
+}
+
+private struct CapabilitySupportBadge: View {
+    let support: RuntimeFlagSupport
+
+    var body: some View {
+        Label(title, systemImage: icon)
+            .font(.caption)
+            .foregroundStyle(color)
+            .labelStyle(.titleAndIcon)
+            .fixedSize()
+            .help(helpText)
+    }
+
+    private var title: String {
+        switch support {
+        case .supported:
+            "Supported"
+        case .unsupported:
+            "Unsupported"
+        case .unknown:
+            "Unknown"
+        }
+    }
+
+    private var icon: String {
+        switch support {
+        case .supported:
+            "checkmark.circle"
+        case .unsupported:
+            "xmark.circle"
+        case .unknown:
+            "questionmark.diamond"
+        }
+    }
+
+    private var color: Color {
+        switch support {
+        case .supported:
+            .green
+        case .unsupported:
+            .orange
+        case .unknown:
+            .secondary
+        }
+    }
+
+    private var helpText: String {
+        switch support {
+        case .supported:
+            "The selected runtime advertises this flag."
+        case .unsupported:
+            "The selected runtime help does not advertise this flag."
+        case .unknown:
+            "Runtime capability detection is unavailable or inconclusive."
+        }
     }
 }
 

@@ -106,7 +106,7 @@ public struct SamplingOptions: Codable, Equatable, Sendable {
 }
 
 public struct LaunchProfile: Codable, Equatable, Identifiable, Sendable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
 
     public var schemaVersion: Int
     public var id: UUID
@@ -118,6 +118,7 @@ public struct LaunchProfile: Codable, Equatable, Identifiable, Sendable {
     public var extraArguments: [String]
     public var createdAt: Date
     public var updatedAt: Date
+    public var lastUsedAt: Date?
 
     public init(
         schemaVersion: Int = LaunchProfile.currentSchemaVersion,
@@ -129,7 +130,8 @@ public struct LaunchProfile: Codable, Equatable, Identifiable, Sendable {
         sampling: SamplingOptions = SamplingOptions(),
         extraArguments: [String] = [],
         createdAt: Date = Date(),
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        lastUsedAt: Date? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.id = id
@@ -141,5 +143,6 @@ public struct LaunchProfile: Codable, Equatable, Identifiable, Sendable {
         self.extraArguments = extraArguments
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.lastUsedAt = lastUsedAt
     }
 }
