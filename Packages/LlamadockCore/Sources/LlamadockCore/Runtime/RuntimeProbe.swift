@@ -30,6 +30,13 @@ public struct RuntimeProbeReport: Equatable, Sendable {
     }
 }
 
+public protocol RuntimeCandidateProbing: Sendable {
+    func probe(
+        _ candidate: RuntimeCandidate,
+        detectedAt: Date
+    ) async -> RuntimeProbeReport
+}
+
 public struct RuntimeProbe: Sendable {
     private let processRunner: any ProcessRunning
     private let capabilitiesParser: RuntimeCapabilitiesParser
@@ -264,3 +271,5 @@ public struct RuntimeProbe: Sendable {
             .joined(separator: "\n")
     }
 }
+
+extension RuntimeProbe: RuntimeCandidateProbing {}

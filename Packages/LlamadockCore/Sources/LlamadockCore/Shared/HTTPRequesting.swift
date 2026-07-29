@@ -3,10 +3,24 @@ import Foundation
 public struct HTTPResponse: Equatable, Sendable {
     public let statusCode: Int
     public let data: Data
+    public let headers: [String: String]
 
-    public init(statusCode: Int, data: Data) {
+    public init(
+        statusCode: Int,
+        data: Data,
+        headers: [String: String] = [:]
+    ) {
         self.statusCode = statusCode
         self.data = data
+        self.headers = headers
+    }
+
+    public func value(
+        forHTTPHeaderField field: String
+    ) -> String? {
+        headers.first { key, _ in
+            key.caseInsensitiveCompare(field) == .orderedSame
+        }?.value
     }
 }
 
@@ -32,7 +46,18 @@ public struct URLSessionHTTPClient: HTTPRequesting {
         }
         return HTTPResponse(
             statusCode: httpResponse.statusCode,
-            data: data
+            data: data,
+            headers: httpResponse.allHeaderFields.reduce(
+                into: [String: String]()
+            ) { headers, entry in
+                guard
+                    let key = entry.key as? String,
+                    let value = entry.value as? String
+                else {
+                    return
+                }
+                headers[key] = value
+            }
         )
     }
 }

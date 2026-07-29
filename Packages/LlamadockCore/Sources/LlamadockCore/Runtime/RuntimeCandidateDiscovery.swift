@@ -16,10 +16,33 @@ public struct RuntimeCandidateDiscovery: Sendable {
     }
 
     public func discover(
+        managedRuntimes: [ManagedRuntimeRecord] = [],
         customExecutableURLs: [URL] = []
     ) -> [RuntimeCandidate] {
         var candidates: [RuntimeCandidate] = []
         var claimedExecutablePaths = Set<String>()
+
+        for runtime in managedRuntimes.sorted(
+            by: { lhs, rhs in
+                if lhs.build == rhs.build {
+                    return lhs.id < rhs.id
+                }
+                return lhs.build > rhs.build
+            }
+        ) {
+            let candidate = RuntimeCandidate(
+                source: .managed,
+                llamaURL: runtime.llamaURL,
+                serverURL: runtime.serverURL,
+                id: runtime.id
+            )
+            candidates.append(candidate)
+            [candidate.llamaURL, candidate.serverURL]
+                .compactMap(\.self)
+                .forEach {
+                    claimedExecutablePaths.insert($0.path)
+                }
+        }
 
         for directory in homebrewBinDirectories {
             let llamaURL = executableIfPresent(

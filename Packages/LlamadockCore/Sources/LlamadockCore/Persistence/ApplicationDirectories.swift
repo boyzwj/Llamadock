@@ -16,6 +16,13 @@ public struct ApplicationDirectories: Sendable {
         runtimes.appending(path: "downloads", directoryHint: .isDirectory)
     }
 
+    public var runtimeRegistry: URL {
+        runtimes.appending(
+            path: "registry.json",
+            directoryHint: .notDirectory
+        )
+    }
+
     public var models: URL {
         root.appending(path: "models", directoryHint: .isDirectory)
     }
@@ -34,5 +41,16 @@ public struct ApplicationDirectories: Sendable {
 
     public var cache: URL {
         root.appending(path: "cache", directoryHint: .isDirectory)
+    }
+
+    public var githubCache: URL {
+        cache.appending(path: "github", directoryHint: .isDirectory)
+    }
+
+    public var latestRuntimeReleaseCache: URL {
+        githubCache.appending(
+            path: "latest-runtime-release.json",
+            directoryHint: .notDirectory
+        )
     }
 }
