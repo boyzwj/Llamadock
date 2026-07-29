@@ -200,10 +200,7 @@ public struct ServerInvocationBuilder: Sendable {
         runtime: RuntimeInstallation,
         to arguments: inout [String]
     ) throws {
-        if
-            runtime.capabilities.detection == .detected,
-            !runtime.capabilities.supportedFlags.contains(flag)
-        {
+        if runtime.capabilities.support(for: flag) == .unsupported {
             throw ServerInvocationError.unsupportedFlag(flag)
         }
         arguments.append(contentsOf: [flag, value])

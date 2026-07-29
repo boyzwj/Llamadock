@@ -22,7 +22,7 @@ struct LaunchProfileCodingTests {
         let json = String(decoding: data, as: UTF8.self)
 
         #expect(decoded == profile)
-        #expect(json.contains(#""schemaVersion" : 1"#))
+        #expect(json.contains(#""schemaVersion" : 2"#))
         #expect(json.contains(#""mainPath" : "/Models/My Model.gguf""#))
         #expect(!json.contains("file:///"))
         #expect(json.contains(#""extraArguments" : ["#))
@@ -69,6 +69,7 @@ func makeProfile(
         ),
         extraArguments: ["--jinja"],
         createdAt: Date(timeIntervalSince1970: 1_785_315_000),
-        updatedAt: Date(timeIntervalSince1970: 1_785_315_100)
+        updatedAt: Date(timeIntervalSince1970: 1_785_315_100),
+        lastUsedAt: Date(timeIntervalSince1970: 1_785_315_200)
     )
 }
