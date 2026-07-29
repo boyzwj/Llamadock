@@ -8,6 +8,7 @@ struct ModelsView: View {
     @State private var searchText = ""
     @State private var validationFilter = ModelValidationFilter.all
     @State private var source = ModelSource.local
+    @State private var pendingModelTrash: LocalModelFile?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,9 +55,56 @@ struct ModelsView: View {
                         Button("Reveal in Finder", systemImage: "folder") {
                             reveal(model.url)
                         }
+
+                        Button(
+                            "Move to Trash",
+                            systemImage: "trash",
+                            role: .destructive
+                        ) {
+                            pendingModelTrash = model
+                        }
+                        .disabled(
+                            appModel.localModelTrashBlockReason(
+                                model
+                            ) != nil
+                        )
+                        .help(
+                            appModel.localModelTrashBlockReason(
+                                model
+                            ) ?? "Move this GGUF file to the system Trash."
+                        )
                     }
                 }
             }
+        }
+        .confirmationDialog(
+            "Move Model to Trash?",
+            isPresented: Binding(
+                get: { pendingModelTrash != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingModelTrash = nil
+                    }
+                }
+            ),
+            presenting: pendingModelTrash
+        ) { model in
+            Button(
+                "Move \(model.url.lastPathComponent) to Trash",
+                role: .destructive
+            ) {
+                pendingModelTrash = nil
+                Task {
+                    await appModel.moveLocalModelToTrash(
+                        id: model.id
+                    )
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingModelTrash = nil
+            }
+        } message: { model in
+            Text(trashConfirmationMessage(for: model))
         }
     }
 
@@ -220,6 +268,18 @@ struct ModelsView: View {
                         Button("Copy Path") {
                             copy(model.url.path)
                         }
+                        Divider()
+                        Button(
+                            "Move to Trash",
+                            role: .destructive
+                        ) {
+                            pendingModelTrash = model
+                        }
+                        .disabled(
+                            appModel.localModelTrashBlockReason(
+                                model
+                            ) != nil
+                        )
                     }
             }
             .listStyle(.sidebar)
@@ -326,6 +386,22 @@ struct ModelsView: View {
                 Button("Copy Path") {
                     copy(model.url.path)
                 }
+                Button(
+                    "Move to Trash",
+                    role: .destructive
+                ) {
+                    pendingModelTrash = model
+                }
+                .disabled(
+                    appModel.localModelTrashBlockReason(
+                        model
+                    ) != nil
+                )
+                .help(
+                    appModel.localModelTrashBlockReason(
+                        model
+                    ) ?? "Move this GGUF file to the system Trash."
+                )
             }
 
             if case .invalid(let reason) = model.validation {
@@ -1214,6 +1290,30 @@ struct ModelsView: View {
         _ url: URL
     ) {
         NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private func trashConfirmationMessage(
+        for model: LocalModelFile
+    ) -> String {
+        let referenceCount = appModel.profileReferenceCount(
+            for: model
+        )
+        let profileWarning: String
+        if referenceCount == 0 {
+            profileWarning = "No saved Profile references this file."
+        } else {
+            profileWarning = """
+                \(referenceCount) saved \
+                \(referenceCount == 1 ? "Profile" : "Profiles") will retain \
+                this path and cannot use it until the file is restored or \
+                replaced.
+                """
+        }
+        return """
+            LlamaDock will move only \(model.url.lastPathComponent) to the \
+            macOS Trash. It will not delete the containing folder or other \
+            split/companion files. \(profileWarning)
+            """
     }
 
     private func copy(

@@ -94,7 +94,7 @@ private struct LlamaDockCommands: Commands {
                 "r",
                 modifiers: [.command, .option]
             )
-            .disabled(!appModel.canStopServer)
+            .disabled(!appModel.canRestartServer)
         }
     }
 
