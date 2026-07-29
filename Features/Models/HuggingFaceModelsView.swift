@@ -50,6 +50,9 @@ struct HuggingFaceModelsView: View {
                 if appModel.isSearchingHuggingFace {
                     ProgressView()
                         .controlSize(.small)
+                        .accessibilityLabel(
+                            "Searching Hugging Face"
+                        )
                 }
             }
 
@@ -394,6 +397,7 @@ struct HuggingFaceModelsView: View {
                     artifact.isComplete ? Color.accentColor : .orange
                 )
                 .frame(width: 22)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(artifact.displayName)
@@ -631,6 +635,12 @@ struct HuggingFaceModelsView: View {
                 )
                 .font(.caption)
             }
+            .accessibilityLabel(
+                "\(job.displayName) download progress"
+            )
+            .accessibilityValue(
+                downloadProgressAccessibilityValue(job)
+            )
 
             if let error = job.error {
                 Text(error)
@@ -705,6 +715,16 @@ struct HuggingFaceModelsView: View {
             countStyle: .file
         )
     }
+
+    private func downloadProgressAccessibilityValue(
+        _ job: ModelDownloadJob
+    ) -> String {
+        let progress = min(max(job.progress, 0), 1)
+        let percentage = Int(
+            (progress * 100).rounded()
+        )
+        return "\(percentage) percent, \(job.state.title)"
+    }
 }
 
 private struct HuggingFaceRepositoryRow: View {
@@ -725,6 +745,12 @@ private struct HuggingFaceRepositoryRow: View {
                     : Color.accentColor
             )
             .frame(width: 20)
+            .accessibilityLabel(
+                repository.gated.requiresAuthentication
+                    || repository.isPrivate
+                    ? "Restricted repository"
+                    : "Public repository"
+            )
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(repository.id)

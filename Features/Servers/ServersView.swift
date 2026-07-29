@@ -50,7 +50,7 @@ struct ServersView: View {
             Image(systemName: stateSystemImage)
                 .font(.system(size: 32))
                 .foregroundStyle(stateColor)
-                .accessibilityLabel(stateTitle)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(stateTitle)
