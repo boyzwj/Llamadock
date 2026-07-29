@@ -60,7 +60,10 @@ report bounded PID-specific CPU, resident memory, thread count, and uptime;
 task counters are sampled at a two-second cadence while log changes reach the UI
 in 500 ms batches. Primary server controls, status, metrics, and logs expose
 VoiceOver semantics. Public artifacts still require Developer ID signing and
-Apple notarization.
+Apple notarization. A tag-triggered release workflow now enforces Developer ID,
+Hardened Runtime, notarization, stapling, Gatekeeper assessment, arm64-only
+packaging, dSYMs, and SHA-256 checks before it can create a GitHub Release. The
+App also has a complete native macOS AppIcon asset set.
 
 ## Requirements
 
@@ -89,6 +92,11 @@ xcodebuild \
 ```
 
 Open `Llamadock.xcodeproj` in Xcode to run the app.
+
+Signed release prerequisites, repository secrets, packaging, notarization, and
+rollback procedures are documented in [RELEASE.md](RELEASE.md). Release
+qualification evidence is recorded in
+[docs/release-qualification.md](docs/release-qualification.md).
 
 ## Real-runtime smoke test
 
@@ -207,8 +215,11 @@ Selected, Roll Back, and Copy Diagnostics controls are available in Runtimes.
   them makes the saved profile invalid until a replacement is selected.
 - The app currently uses a 30-second cold-probe budget because first launch of
   an official macOS runtime can initialize platform backends slowly.
-- Development builds are unsigned. Release signing, notarization, packaging,
-  update delivery, and release qualification are Milestone 5 work.
+- This repository currently has no configured Developer ID certificate or
+  notarization secrets, so a public v1 artifact cannot yet be produced. The
+  release workflow fails closed until those credentials are configured.
+- Final qualification still requires real smoke results from two Apple Silicon
+  generations with different memory capacities.
 
 ## Privacy and release security
 
