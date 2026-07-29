@@ -35,7 +35,8 @@ uploads an unsigned fallback artifact.
    memory capacities. Record the real evidence in
    `docs/release-qualification.md`.
 4. Confirm `MARKETING_VERSION`, `CURRENT_PROJECT_VERSION`, release notes,
-   privacy documentation, licenses, and the qualification record.
+   privacy documentation, licenses, the
+   `docs/v1-acceptance-audit.md` checklist, and the qualification record.
 5. Create and push an annotated tag on the qualified commit matching the app
    version, for example
    `v1.0.0`.
