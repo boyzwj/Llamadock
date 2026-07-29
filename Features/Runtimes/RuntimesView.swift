@@ -134,6 +134,9 @@ struct RuntimesView: View {
                 {
                     ProgressView()
                         .controlSize(.small)
+                        .accessibilityLabel(
+                            "Runtime operation in progress"
+                        )
                 }
             }
 

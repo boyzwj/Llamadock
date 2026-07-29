@@ -60,6 +60,13 @@ result, stopped PID/socket evidence, and tester/date.
 
 ## Manual accessibility and privacy checks
 
+Static source review is complete: status is paired with visible text and an
+icon, decorative icons are hidden from assistive technologies, restricted or
+invalid items have explicit labels, indeterminate operations have meaningful
+labels, and download progress exposes percentage plus state. These source
+semantics do not mark the following candidate-level VoiceOver, keyboard, or
+appearance checks as passed.
+
 - [ ] Keyboard navigation reaches primary sidebar, toolbar, forms, download
   controls, server controls, and Settings.
 - [ ] VoiceOver announces server state, progress, metrics, and log region.

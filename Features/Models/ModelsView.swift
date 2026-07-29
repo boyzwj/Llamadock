@@ -1367,6 +1367,7 @@ private struct ModelLibraryRow: View {
             Image(systemName: icon)
                 .foregroundStyle(iconColor)
                 .frame(width: 20)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(model.displayName)
@@ -1392,6 +1393,9 @@ private struct ModelLibraryRow: View {
             if case .invalid = model.validation {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
+                    .accessibilityLabel(
+                        "Invalid or unsupported GGUF"
+                    )
                     .help("Invalid or unsupported GGUF")
             } else if model.metadata?.shard != nil {
                 Text("SPLIT")

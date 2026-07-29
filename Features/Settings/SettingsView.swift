@@ -38,6 +38,9 @@ struct SettingsView: View {
                     if appModel.isCheckingAppUpdates {
                         ProgressView()
                             .controlSize(.small)
+                            .accessibilityLabel(
+                                "Checking for LlamaDock updates"
+                            )
                     }
 
                     if
