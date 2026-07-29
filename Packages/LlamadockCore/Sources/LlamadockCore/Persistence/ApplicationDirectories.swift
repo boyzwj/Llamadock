@@ -16,6 +16,13 @@ public struct ApplicationDirectories: Sendable {
         runtimes.appending(path: "downloads", directoryHint: .isDirectory)
     }
 
+    public var runtimeRegistry: URL {
+        runtimes.appending(
+            path: "registry.json",
+            directoryHint: .notDirectory
+        )
+    }
+
     public var models: URL {
         root.appending(path: "models", directoryHint: .isDirectory)
     }

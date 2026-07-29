@@ -43,7 +43,17 @@ public struct RuntimeArchiveVerification: Equatable, Sendable {
     }
 }
 
-public struct RuntimeArchiveVerifier: Sendable {
+public protocol RuntimeArchiveVerifying: Sendable {
+    func verify(
+        archiveURL: URL,
+        asset: GitHubRuntimeReleaseAsset
+    ) throws -> RuntimeArchiveVerification
+}
+
+public struct RuntimeArchiveVerifier:
+    RuntimeArchiveVerifying,
+    Sendable
+{
     public init() {}
 
     public func verify(

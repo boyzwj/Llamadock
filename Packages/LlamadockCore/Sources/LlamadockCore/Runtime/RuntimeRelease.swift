@@ -162,6 +162,12 @@ public struct RuntimeReleaseCheck: Equatable, Sendable {
     }
 }
 
+public protocol RuntimeReleaseChecking: Sendable {
+    func checkLatest(
+        now: Date
+    ) async throws -> RuntimeReleaseCheck
+}
+
 public struct GitHubRuntimeAssetSelector: Sendable {
     public init() {}
 

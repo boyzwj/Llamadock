@@ -203,6 +203,16 @@ public struct ManagedRuntimeBinaryPair: Equatable, Sendable {
     }
 }
 
+public protocol PreparedManagedRuntimeValidating: Sendable {
+    func validate(
+        extractedRoot: URL,
+        intendedInstallDirectory: URL,
+        release: ManagedRuntimeRelease,
+        archiveSHA256: String,
+        now: Date
+    ) async throws -> ManagedRuntimeRecord
+}
+
 public struct ManagedRuntimeBinaryLocator:
     @unchecked Sendable
 {
@@ -335,7 +345,10 @@ public struct ManagedRuntimeBinaryLocator:
     }
 }
 
-public struct PreparedManagedRuntimeValidator: Sendable {
+public struct PreparedManagedRuntimeValidator:
+    PreparedManagedRuntimeValidating,
+    Sendable
+{
     private let locator: ManagedRuntimeBinaryLocator
     private let binaryInspector: MachOBinaryInspector
     private let runtimeProbe: any RuntimeCandidateProbing

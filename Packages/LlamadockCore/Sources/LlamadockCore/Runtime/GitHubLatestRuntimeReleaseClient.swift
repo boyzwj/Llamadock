@@ -1,6 +1,9 @@
 import Foundation
 
-public struct GitHubLatestRuntimeReleaseClient: Sendable {
+public struct GitHubLatestRuntimeReleaseClient:
+    RuntimeReleaseChecking,
+    Sendable
+{
     public static let officialEndpoint = URL(
         string: "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
     )!
