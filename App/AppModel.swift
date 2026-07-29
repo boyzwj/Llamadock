@@ -22,6 +22,14 @@ final class AppModel {
     var modelDirectoryIssues: [ModelDirectoryResolutionIssue] = []
     var modelScanSnapshot: LocalModelScanSnapshot?
     var selectedLibraryModelID: String?
+    var huggingFaceRepositories: [HuggingFaceRepository] = []
+    var selectedHuggingFaceRepositoryID: String?
+    var huggingFaceReference: HuggingFaceRepositoryReference?
+    var huggingFaceCatalog: HuggingFaceRepositoryCatalog?
+    var selectedHuggingFaceArtifactID: String?
+    var isSearchingHuggingFace = false
+    var isLoadingHuggingFaceRepository = false
+    var huggingFaceError: String?
     var profiles: [LaunchProfile] = []
     var selectedProfileID: UUID?
     var profile: LaunchProfile? {
@@ -73,6 +81,7 @@ final class AppModel {
     private let applicationDirectories: ApplicationDirectories
     private let modelDirectoryStore: JSONModelDirectoryStore
     private let modelScanner: LocalModelScanner
+    private let huggingFaceClient: any HuggingFaceHubServing
     private let serverController: ServerProcessController
     private let userDefaults: UserDefaults
     private var didBootstrap = false
@@ -97,7 +106,8 @@ final class AppModel {
         )? = nil,
         managedRuntimeInstaller: ManagedRuntimeInstaller? = nil,
         modelDirectoryStore: JSONModelDirectoryStore? = nil,
-        modelScanner: LocalModelScanner = LocalModelScanner()
+        modelScanner: LocalModelScanner = LocalModelScanner(),
+        huggingFaceClient: (any HuggingFaceHubServing)? = nil
     ) {
         self.runtimeDiscovery = runtimeDiscovery
         self.runtimeProbe = runtimeProbe
@@ -125,6 +135,8 @@ final class AppModel {
                 fileURL: directories.settings
             )
         self.modelScanner = modelScanner
+        self.huggingFaceClient = huggingFaceClient
+            ?? HuggingFaceHubClient()
 
         let registry: any ManagedRuntimeRegistering
         if let managedRuntimeRegistry {
@@ -596,6 +608,108 @@ final class AppModel {
         }
     }
 
+    func searchHuggingFace(
+        _ input: String
+    ) async {
+        guard !isSearchingHuggingFace else {
+            return
+        }
+        isSearchingHuggingFace = true
+        huggingFaceError = nil
+        defer { isSearchingHuggingFace = false }
+
+        do {
+            let query = input.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            let reference: HuggingFaceRepositoryReference?
+            if isHuggingFaceReference(query) {
+                reference = try HuggingFaceReferenceParser().parse(
+                    query
+                )
+            } else {
+                reference = nil
+            }
+
+            let repositories = try await huggingFaceClient.searchModels(
+                query: reference?.repositoryID ?? query,
+                limit: 50,
+                token: nil
+            )
+            if let reference {
+                let exactRepository = repositories.first {
+                    $0.id.caseInsensitiveCompare(
+                        reference.repositoryID
+                    ) == .orderedSame
+                } ?? HuggingFaceRepository(
+                    id: reference.repositoryID,
+                    downloads: 0,
+                    likes: 0,
+                    lastModified: nil,
+                    gated: .none,
+                    isPrivate: false,
+                    pipelineTag: nil,
+                    tags: []
+                )
+                huggingFaceRepositories = [
+                    exactRepository,
+                ] + repositories.filter {
+                    $0.id.caseInsensitiveCompare(
+                        reference.repositoryID
+                    ) != .orderedSame
+                }
+                selectedHuggingFaceRepositoryID = exactRepository.id
+                try await loadHuggingFaceCatalog(
+                    reference: reference
+                )
+            } else {
+                huggingFaceRepositories = repositories
+                selectedHuggingFaceRepositoryID = repositories.first?.id
+                if let repository = repositories.first {
+                    try await loadHuggingFaceCatalog(
+                        reference: HuggingFaceRepositoryReference(
+                            repositoryID: repository.id
+                        )
+                    )
+                } else {
+                    huggingFaceReference = nil
+                    huggingFaceCatalog = nil
+                    selectedHuggingFaceArtifactID = nil
+                }
+            }
+        } catch {
+            huggingFaceError = error.localizedDescription
+        }
+    }
+
+    func selectHuggingFaceRepository(
+        _ id: String?
+    ) async {
+        guard
+            !isLoadingHuggingFaceRepository,
+            let id
+        else {
+            return
+        }
+        selectedHuggingFaceRepositoryID = id
+        huggingFaceError = nil
+        do {
+            try await loadHuggingFaceCatalog(
+                reference: HuggingFaceRepositoryReference(
+                    repositoryID: id
+                )
+            )
+        } catch {
+            huggingFaceError = error.localizedDescription
+        }
+    }
+
+    func selectHuggingFaceArtifact(
+        _ id: String?
+    ) {
+        selectedHuggingFaceArtifactID = id
+    }
+
     func createProfile(
         for model: LocalModelFile
     ) {
@@ -883,6 +997,24 @@ final class AppModel {
         modelScanSnapshot?.models ?? []
     }
 
+    var selectedHuggingFaceRepository: HuggingFaceRepository? {
+        guard let selectedHuggingFaceRepositoryID else {
+            return nil
+        }
+        return huggingFaceRepositories.first {
+            $0.id == selectedHuggingFaceRepositoryID
+        }
+    }
+
+    var selectedHuggingFaceArtifact: HuggingFaceGGUFArtifact? {
+        guard let selectedHuggingFaceArtifactID else {
+            return nil
+        }
+        return huggingFaceCatalog?.artifacts.first {
+            $0.id == selectedHuggingFaceArtifactID
+        }
+    }
+
     var localModelByteCount: UInt64 {
         localModels.reduce(0) { partial, model in
             let sum = partial.addingReportingOverflow(
@@ -894,6 +1026,49 @@ final class AppModel {
 
     var ownedModelsDirectoryURL: URL {
         applicationDirectories.models
+    }
+
+    private func loadHuggingFaceCatalog(
+        reference: HuggingFaceRepositoryReference
+    ) async throws {
+        isLoadingHuggingFaceRepository = true
+        huggingFaceReference = reference
+        huggingFaceCatalog = nil
+        selectedHuggingFaceArtifactID = nil
+        defer { isLoadingHuggingFaceRepository = false }
+
+        let files = try await huggingFaceClient.repositoryFiles(
+            reference: reference,
+            token: nil
+        )
+        let catalog = HuggingFaceFileCatalogBuilder().makeCatalog(
+            files: files
+        )
+        huggingFaceCatalog = catalog
+        let preferredQuantization = reference.quantization?
+            .lowercased()
+        selectedHuggingFaceArtifactID = catalog.artifacts.first {
+            guard let preferredQuantization else {
+                return $0.role == .main && $0.isComplete
+            }
+            return $0.role == .main
+                && $0.isComplete
+                && $0.quantization?.lowercased()
+                    == preferredQuantization
+        }?.id ?? catalog.artifacts.first {
+            $0.role == .main && $0.isComplete
+        }?.id ?? catalog.artifacts.first?.id
+    }
+
+    private func isHuggingFaceReference(
+        _ input: String
+    ) -> Bool {
+        input.contains("/")
+            || input.localizedCaseInsensitiveContains(
+                "huggingface.co"
+            )
+            || input.contains("-hf")
+            || input.contains("--hf-repo")
     }
 
     var canChangeManagedRuntime: Bool {

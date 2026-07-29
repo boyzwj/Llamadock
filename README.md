@@ -8,7 +8,7 @@ The project follows the architecture and milestones in [DESIGN.md](DESIGN.md).
 
 ## Status
 
-Milestones 0 through 2 are complete. In addition to the external-runtime
+Milestones 0 through 3 are complete. In addition to the external-runtime
 vertical slice, LlamaDock can query and cache the official latest `llama.cpp`
 release, securely download and extract its macOS arm64 archive, validate its
 Mach-O binaries and reported build, atomically register it, activate it, and
@@ -24,8 +24,21 @@ official GitHub release → install and validate `b10176` → persist an active
 managed registry → relaunch from the validated release cache → start the
 managed runtime → complete an OpenAI-compatible request → stop and release the
 socket. Simulated verification, registration, and activation failures cover
-the non-destructive rollback boundaries. The full core suite now has 73 tests
-across 20 suites.
+the non-destructive rollback boundaries.
+
+The Milestone 3 model library recursively scans the app-owned model directory
+and bookmarked external folders, reads bounded GGUF v2/v3 metadata without
+loading tensor data, keeps invalid files visible, and restores multiple
+versioned launch profiles. Typed settings are checked against the selected
+runtime's advertised flags while extra arguments remain tokenized and
+shell-free.
+
+Milestone 4 is in progress. The Models screen can already search public
+Hugging Face GGUF repositories, normalize repository URLs and `llama -hf`
+references, page through the real file tree, and group quantizations, split
+artifacts, vision projectors, and draft models. Downloads remain deliberately
+disabled until their persistent resume and verification path is complete. The
+full core suite currently has 103 tests across 28 suites.
 
 ## Requirements
 
@@ -82,6 +95,22 @@ The recorded Milestone 1 qualification used:
   process shutdown, persistence after relaunch, and occupied-port rejection
   before process launch
 
+## Real Hugging Face smoke test
+
+Public Hub search and tree parsing can be checked without a token or model
+download:
+
+```bash
+LLAMADOCK_HF_SMOKE_QUERY=stories15M \
+LLAMADOCK_HF_SMOKE_REPOSITORY=mradermacher/llama2.c-stories15M-GGUF \
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+xcrun swift test \
+  --package-path Packages/LlamadockCore \
+  --filter RealHuggingFaceHubSmokeTests
+```
+
+The test is skipped unless both `LLAMADOCK_HF_SMOKE_*` variables are present.
+
 ## Managed runtime storage
 
 LlamaDock owns a transparent runtime directory under
@@ -100,8 +129,8 @@ Selected, Roll Back, and Copy Diagnostics controls are available in Runtimes.
 ## Current limitations
 
 - Managed runtime deletion and automatic retention pruning are not exposed yet.
-  Resumable model downloads and the full model library arrive in later
-  milestones.
+  Hugging Face token storage and resumable model downloads are Milestone 4
+  work in progress.
 - Runtime and model files remain in their original locations. Moving or deleting
   them makes the saved profile invalid until a replacement is selected.
 - The app currently uses a 30-second cold-probe budget because first launch of

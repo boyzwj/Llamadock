@@ -7,8 +7,60 @@ struct ModelsView: View {
     @Environment(AppModel.self) private var appModel
     @State private var searchText = ""
     @State private var validationFilter = ModelValidationFilter.all
+    @State private var source = ModelSource.local
 
     var body: some View {
+        VStack(spacing: 0) {
+            Picker("Model Source", selection: $source) {
+                ForEach(ModelSource.allCases) { source in
+                    Label(source.title, systemImage: source.icon)
+                        .tag(source)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(width: 360)
+            .padding(.vertical, 10)
+
+            Divider()
+
+            switch source {
+            case .local:
+                localLibrary
+            case .huggingFace:
+                HuggingFaceModelsView()
+            }
+        }
+        .navigationTitle("Models")
+        .toolbar {
+            ToolbarItemGroup {
+                if source == .local {
+                    Button("Add Folder", systemImage: "folder.badge.plus") {
+                        chooseDirectories()
+                    }
+
+                    Button("Open GGUF", systemImage: "doc.badge.plus") {
+                        chooseModel()
+                    }
+
+                    Button("Refresh", systemImage: "arrow.clockwise") {
+                        Task {
+                            await appModel.refreshModels()
+                        }
+                    }
+                    .disabled(appModel.isRefreshingModels)
+
+                    if let model = appModel.selectedLibraryModel {
+                        Button("Reveal in Finder", systemImage: "folder") {
+                            reveal(model.url)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var localLibrary: some View {
         VStack(spacing: 0) {
             rootsBar
             Divider()
@@ -30,36 +82,11 @@ struct ModelsView: View {
                 }
             }
         }
-        .navigationTitle("Models")
         .searchable(
             text: $searchText,
             placement: .toolbar,
             prompt: "Search local models"
         )
-        .toolbar {
-            ToolbarItemGroup {
-                Button("Add Folder", systemImage: "folder.badge.plus") {
-                    chooseDirectories()
-                }
-
-                Button("Open GGUF", systemImage: "doc.badge.plus") {
-                    chooseModel()
-                }
-
-                Button("Refresh", systemImage: "arrow.clockwise") {
-                    Task {
-                        await appModel.refreshModels()
-                    }
-                }
-                .disabled(appModel.isRefreshingModels)
-
-                if let model = appModel.selectedLibraryModel {
-                    Button("Reveal in Finder", systemImage: "folder") {
-                        reveal(model.url)
-                    }
-                }
-            }
-        }
     }
 
     private var rootsBar: some View {
@@ -1318,6 +1345,37 @@ private struct ModelStatusBadge: View {
 
     private var color: Color {
         model.validation == .valid ? .green : .orange
+    }
+}
+
+private enum ModelSource:
+    String,
+    CaseIterable,
+    Identifiable
+{
+    case local
+    case huggingFace
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .local:
+            "Local Library"
+        case .huggingFace:
+            "Hugging Face"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .local:
+            "internaldrive"
+        case .huggingFace:
+            "globe"
+        }
     }
 }
 
