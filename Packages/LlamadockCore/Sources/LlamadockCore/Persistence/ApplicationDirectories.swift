@@ -53,4 +53,11 @@ public struct ApplicationDirectories: Sendable {
             directoryHint: .notDirectory
         )
     }
+
+    public var settings: URL {
+        root.appending(
+            path: "settings.json",
+            directoryHint: .notDirectory
+        )
+    }
 }

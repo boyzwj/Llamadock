@@ -31,5 +31,12 @@ struct ApplicationDirectoriesTests {
                     directoryHint: .notDirectory
                 )
         )
+        #expect(
+            directories.settings
+                == root.appending(
+                    path: "settings.json",
+                    directoryHint: .notDirectory
+                )
+        )
     }
 }

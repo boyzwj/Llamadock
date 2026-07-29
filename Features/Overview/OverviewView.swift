@@ -20,8 +20,7 @@ struct OverviewView: View {
                     )
                     SummaryCard(
                         title: "Models",
-                        value: appModel.selectedModelURL?.lastPathComponent
-                            ?? "No model selected",
+                        value: modelSummary,
                         systemImage: "externaldrive"
                     )
                     SummaryCard(
@@ -84,6 +83,23 @@ struct OverviewView: View {
         case .stopping:
             "Stopping"
         }
+    }
+
+    private var modelSummary: String {
+        let count = appModel.localModels.count
+        guard count > 0 else {
+            return "No local models"
+        }
+        let size = ByteCountFormatter.string(
+            fromByteCount: Int64(
+                min(
+                    appModel.localModelByteCount,
+                    UInt64(Int64.max)
+                )
+            ),
+            countStyle: .file
+        )
+        return "\(count) \(count == 1 ? "file" : "files") • \(size)"
     }
 
     private var setupDescription: String {

@@ -18,6 +18,10 @@ final class AppModel {
     var runtimeUpdateError: String?
     var runtimeInstallSnapshot = ManagedRuntimeInstallSnapshot()
     var selectedModelURL: URL?
+    var modelDirectories: [ResolvedModelDirectory] = []
+    var modelDirectoryIssues: [ModelDirectoryResolutionIssue] = []
+    var modelScanSnapshot: LocalModelScanSnapshot?
+    var selectedLibraryModelID: String?
     var profile: LaunchProfile?
     var commandPreview: String?
     var commandError: String?
@@ -30,6 +34,7 @@ final class AppModel {
     var isRefreshingRuntimes = false
     var isCheckingRuntimeUpdates = false
     var isInstallingRuntime = false
+    var isRefreshingModels = false
     var isServerOperationInProgress = false
     var visibleError: String?
 
@@ -40,11 +45,15 @@ final class AppModel {
     private let runtimeReleaseChecker: any RuntimeReleaseChecking
     private let managedRuntimeInstaller: ManagedRuntimeInstaller
     private let profileStore: JSONProfileStore
+    private let applicationDirectories: ApplicationDirectories
+    private let modelDirectoryStore: JSONModelDirectoryStore
+    private let modelScanner: LocalModelScanner
     private let serverController: ServerProcessController
     private let userDefaults: UserDefaults
     private var didBootstrap = false
     private var serverMonitorTask: Task<Void, Never>?
     private var runtimeInstallMonitorTask: Task<Void, Never>?
+    private var serverModelSecurityScopes: [URL] = []
 
     init(
         runtimeDiscovery: RuntimeCandidateDiscovery = RuntimeCandidateDiscovery(),
@@ -61,7 +70,9 @@ final class AppModel {
         runtimeReleaseCache: (
             any RuntimeReleaseCaching
         )? = nil,
-        managedRuntimeInstaller: ManagedRuntimeInstaller? = nil
+        managedRuntimeInstaller: ManagedRuntimeInstaller? = nil,
+        modelDirectoryStore: JSONModelDirectoryStore? = nil,
+        modelScanner: LocalModelScanner = LocalModelScanner()
     ) {
         self.runtimeDiscovery = runtimeDiscovery
         self.runtimeProbe = runtimeProbe
@@ -83,6 +94,12 @@ final class AppModel {
                 )
             )
         }
+        self.applicationDirectories = directories
+        self.modelDirectoryStore = modelDirectoryStore
+            ?? JSONModelDirectoryStore(
+                fileURL: directories.settings
+            )
+        self.modelScanner = modelScanner
 
         let registry: any ManagedRuntimeRegistering
         if let managedRuntimeRegistry {
@@ -154,6 +171,8 @@ final class AppModel {
         } catch {
             visibleError = "Could not restore profiles: \(error.localizedDescription)"
         }
+
+        await refreshModels()
 
         if selectedRuntimeID == nil {
             selectedRuntimeID = preferredRuntimeID(
@@ -404,6 +423,9 @@ final class AppModel {
         }
 
         selectedModelURL = standardizedURL
+        selectedLibraryModelID = modelScanSnapshot?.models.first(
+            where: { $0.url == standardizedURL }
+        )?.id
         let now = Date()
         let modelName = standardizedURL.deletingPathExtension().lastPathComponent
         let newProfile = LaunchProfile(
@@ -422,6 +444,122 @@ final class AppModel {
         profile = newProfile
         persist(newProfile)
         refreshCommandPreview()
+    }
+
+    func refreshModels() async {
+        guard !isRefreshingModels else {
+            return
+        }
+        isRefreshingModels = true
+        defer { isRefreshingModels = false }
+
+        do {
+            try FileManager.default.createDirectory(
+                at: applicationDirectories.models,
+                withIntermediateDirectories: true
+            )
+            let directorySnapshot = try await modelDirectoryStore
+                .snapshot()
+            modelDirectories = directorySnapshot.directories
+            modelDirectoryIssues = directorySnapshot.issues
+
+            let externalURLs = directorySnapshot.directories.map(
+                \.url
+            )
+            let activeScopes = externalURLs.compactMap { url in
+                url.startAccessingSecurityScopedResource()
+                    ? url
+                    : nil
+            }
+            defer {
+                for url in activeScopes {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            let snapshot = try await modelScanner.scan(
+                roots: [applicationDirectories.models]
+                    + externalURLs
+            )
+            modelScanSnapshot = snapshot
+
+            if
+                let selectedLibraryModelID,
+                snapshot.models.contains(
+                    where: { $0.id == selectedLibraryModelID }
+                )
+            {
+                return
+            }
+            if let selectedModelURL {
+                selectedLibraryModelID = snapshot.models.first(
+                    where: { $0.url == selectedModelURL }
+                )?.id
+            } else {
+                selectedLibraryModelID = snapshot.models.first?.id
+            }
+        } catch {
+            visibleError = """
+                Could not refresh the local model library: \
+                \(error.localizedDescription)
+                """
+        }
+    }
+
+    func addModelDirectory(
+        _ url: URL
+    ) async {
+        do {
+            _ = try await modelDirectoryStore.addDirectory(url)
+            await refreshModels()
+        } catch {
+            visibleError = """
+                Could not add the model directory: \
+                \(error.localizedDescription)
+                """
+        }
+    }
+
+    func removeModelDirectory(
+        id: UUID
+    ) async {
+        do {
+            _ = try await modelDirectoryStore.removeDirectory(
+                id: id
+            )
+            await refreshModels()
+        } catch {
+            visibleError = """
+                Could not remove the model directory: \
+                \(error.localizedDescription)
+                """
+        }
+    }
+
+    func selectLibraryModel(
+        _ id: String?
+    ) {
+        selectedLibraryModelID = id
+    }
+
+    func createProfile(
+        for model: LocalModelFile
+    ) {
+        guard model.validation == .valid else {
+            visibleError = """
+                This GGUF file is invalid and cannot be used to create \
+                a launch profile.
+                """
+            return
+        }
+        guard model.role == .main else {
+            visibleError = """
+                Choose a main model. Companion and auxiliary GGUF files \
+                are attached from a profile.
+                """
+            return
+        }
+        selectModel(model.url)
     }
 
     func updateProfile(
@@ -446,7 +584,9 @@ final class AppModel {
             visibleError = "Choose a GGUF model first."
             return
         }
+        beginServerModelSecurityScope(for: profile)
         guard FileManager.default.fileExists(atPath: profile.model.mainPath) else {
+            endServerModelSecurityScope()
             visibleError = "The selected GGUF model no longer exists."
             return
         }
@@ -458,6 +598,7 @@ final class AppModel {
                 runtime: runtime
             )
         } catch {
+            endServerModelSecurityScope()
             visibleError = "Cannot build launch command: \(error)"
             return
         }
@@ -475,6 +616,7 @@ final class AppModel {
                 port: profile.server.port
             )
         } catch {
+            endServerModelSecurityScope()
             visibleError = "Could not start llama-server: \(error.localizedDescription)"
         }
         serverSnapshot = await serverController.snapshot()
@@ -485,6 +627,7 @@ final class AppModel {
         defer { isServerOperationInProgress = false }
 
         await serverController.stop()
+        endServerModelSecurityScope()
         serverSnapshot = await serverController.snapshot()
         serverMonitorTask?.cancel()
         serverMonitorTask = nil
@@ -497,6 +640,7 @@ final class AppModel {
 
     func shutdown() async {
         await serverController.stop()
+        endServerModelSecurityScope()
         serverMonitorTask?.cancel()
         serverMonitorTask = nil
         runtimeInstallMonitorTask?.cancel()
@@ -505,6 +649,32 @@ final class AppModel {
 
     var selectedRuntime: RuntimeInstallation? {
         runtimes.first { $0.id == selectedRuntimeID }
+    }
+
+    var selectedLibraryModel: LocalModelFile? {
+        guard let selectedLibraryModelID else {
+            return nil
+        }
+        return modelScanSnapshot?.models.first {
+            $0.id == selectedLibraryModelID
+        }
+    }
+
+    var localModels: [LocalModelFile] {
+        modelScanSnapshot?.models ?? []
+    }
+
+    var localModelByteCount: UInt64 {
+        localModels.reduce(0) { partial, model in
+            let sum = partial.addingReportingOverflow(
+                model.fileSize
+            )
+            return sum.overflow ? UInt64.max : sum.partialValue
+        }
+    }
+
+    var ownedModelsDirectoryURL: URL {
+        applicationDirectories.models
     }
 
     var canChangeManagedRuntime: Bool {
@@ -670,6 +840,7 @@ final class AppModel {
                 switch snapshot.state {
                 case .failed, .stopped:
                     if !self.isServerOperationInProgress {
+                        self.endServerModelSecurityScope()
                         return
                     }
                 case .starting, .ready, .degraded, .stopping:
@@ -679,5 +850,70 @@ final class AppModel {
                 try? await Task.sleep(for: .milliseconds(200))
             }
         }
+    }
+
+    private func beginServerModelSecurityScope(
+        for profile: LaunchProfile
+    ) {
+        endServerModelSecurityScope()
+        let modelPaths = [
+            profile.model.mainPath,
+            profile.model.mmprojPath,
+            profile.model.draftPath,
+        ].compactMap { $0 }
+        let roots = Set(
+            modelPaths.compactMap { modelPath in
+                let normalizedModelPath = normalizedPath(
+                    modelPath,
+                    directoryHint: .notDirectory
+                )
+                return modelDirectories
+                    .map(\.url)
+                    .filter {
+                        path(
+                            normalizedModelPath,
+                            isInside: normalizedPath(
+                                $0.path,
+                                directoryHint: .isDirectory
+                            )
+                        )
+                    }
+                    .max { $0.path.count < $1.path.count }
+            }
+        )
+        for root in roots
+        where root.startAccessingSecurityScopedResource() {
+            serverModelSecurityScopes.append(root)
+        }
+    }
+
+    private func endServerModelSecurityScope() {
+        for root in serverModelSecurityScopes {
+            root.stopAccessingSecurityScopedResource()
+        }
+        serverModelSecurityScopes = []
+    }
+
+    private func normalizedPath(
+        _ path: String,
+        directoryHint: URL.DirectoryHint
+    ) -> String {
+        URL(
+            filePath: path,
+            directoryHint: directoryHint
+        )
+        .resolvingSymlinksInPath()
+        .standardizedFileURL
+        .path
+    }
+
+    private func path(
+        _ candidate: String,
+        isInside root: String
+    ) -> Bool {
+        candidate == root
+            || candidate.hasPrefix(
+                root.hasSuffix("/") ? root : root + "/"
+            )
     }
 }
