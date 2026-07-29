@@ -16,6 +16,8 @@ final class AppModel {
     )
     var latestRuntimeRelease: RuntimeReleaseCheck?
     var runtimeUpdateError: String?
+    var appUpdateCheck: AppUpdateCheck?
+    var appUpdateError: String?
     var runtimeInstallSnapshot = ManagedRuntimeInstallSnapshot()
     var selectedModelURL: URL?
     var modelDirectories: [ResolvedModelDirectory] = []
@@ -71,6 +73,7 @@ final class AppModel {
     var isBootstrapping = false
     var isRefreshingRuntimes = false
     var isCheckingRuntimeUpdates = false
+    var isCheckingAppUpdates = false
     var isInstallingRuntime = false
     var isRefreshingModels = false
     var isServerOperationInProgress = false
@@ -81,6 +84,7 @@ final class AppModel {
     private let managedRuntimeRegistry: any ManagedRuntimeRegistering
     private let runtimeReleaseCache: any RuntimeReleaseCaching
     private let runtimeReleaseChecker: any RuntimeReleaseChecking
+    private let appReleaseChecker: any AppReleaseChecking
     private let managedRuntimeInstaller: ManagedRuntimeInstaller
     private let profileStore: JSONProfileStore
     private let applicationDirectories: ApplicationDirectories
@@ -114,6 +118,9 @@ final class AppModel {
         )? = nil,
         runtimeReleaseCache: (
             any RuntimeReleaseCaching
+        )? = nil,
+        appReleaseChecker: (
+            any AppReleaseChecking
         )? = nil,
         managedRuntimeInstaller: ManagedRuntimeInstaller? = nil,
         modelDirectoryStore: JSONModelDirectoryStore? = nil,
@@ -196,6 +203,8 @@ final class AppModel {
             )
         }
         self.runtimeReleaseChecker = releaseChecker
+        self.appReleaseChecker = appReleaseChecker
+            ?? GitHubAppReleaseChecker()
         self.managedRuntimeInstaller = managedRuntimeInstaller
             ?? ManagedRuntimeInstaller(
                 directories: directories,
@@ -275,7 +284,11 @@ final class AppModel {
         refreshCommandPreview()
 
         Task { [weak self] in
-            await self?.checkRuntimeUpdatesIfDue()
+            guard let self else {
+                return
+            }
+            await self.checkRuntimeUpdatesIfDue()
+            await self.checkAppUpdatesIfDue()
         }
     }
 
@@ -373,6 +386,38 @@ final class AppModel {
                 \(error.localizedDescription)
                 """
             runtimeUpdateError = message
+            if reportErrors {
+                visibleError = message
+            }
+        }
+    }
+
+    func checkAppUpdates(
+        reportErrors: Bool = true
+    ) async {
+        guard !isCheckingAppUpdates else {
+            return
+        }
+        isCheckingAppUpdates = true
+        appUpdateError = nil
+        defer { isCheckingAppUpdates = false }
+
+        do {
+            appUpdateCheck = try await appReleaseChecker
+                .checkLatest(
+                    currentVersion: appVersion,
+                    now: Date()
+                )
+            userDefaults.set(
+                Date(),
+                forKey: "lastAppUpdateCheck"
+            )
+        } catch {
+            let message = """
+                Could not check for a LlamaDock app update: \
+                \(error.localizedDescription)
+                """
+            appUpdateError = message
             if reportErrors {
                 visibleError = message
             }
@@ -1170,6 +1215,31 @@ final class AppModel {
         serverSnapshot = await serverController.snapshot()
     }
 
+    var canStartServer: Bool {
+        guard
+            !isServerOperationInProgress,
+            selectedRuntime != nil,
+            profile != nil
+        else {
+            return false
+        }
+        switch serverSnapshot.state {
+        case .stopped, .failed:
+            return true
+        case .starting, .ready, .degraded, .stopping:
+            return false
+        }
+    }
+
+    var canStopServer: Bool {
+        switch serverSnapshot.state {
+        case .starting, .ready, .degraded:
+            return true
+        case .stopped, .failed, .stopping:
+            return false
+        }
+    }
+
     func stopServer() async {
         isServerOperationInProgress = true
         defer { isServerOperationInProgress = false }
@@ -1503,6 +1573,331 @@ final class AppModel {
         return selectedRuntimeID
     }
 
+    var appVersion: String {
+        Bundle.main.object(
+            forInfoDictionaryKey:
+                "CFBundleShortVersionString"
+        ) as? String ?? "1.0.0"
+    }
+
+    var appBuild: String {
+        Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleVersion"
+        ) as? String ?? "1"
+    }
+
+    func makeDiagnosticsReport(
+        generatedAt: Date = Date()
+    ) -> String {
+        let processInfo = ProcessInfo.processInfo
+        let physicalMemory = ByteCountFormatter.string(
+            fromByteCount: Int64(
+                min(
+                    processInfo.physicalMemory,
+                    UInt64(Int64.max)
+                )
+            ),
+            countStyle: .memory
+        )
+        let downloadEntries = modelDownloadSnapshot.jobs
+            .enumerated()
+            .map { index, job in
+                DiagnosticsEntry(
+                    "Job \(index + 1)",
+                    [
+                        job.repositoryID,
+                        job.displayName,
+                        job.state.rawValue,
+                        "\(job.receivedBytes)/\(job.expectedBytes) bytes",
+                        "\(job.files.count) files",
+                        job.error,
+                    ]
+                    .compactMap { $0 }
+                    .joined(separator: " • ")
+                )
+            }
+        let runtimeEntries = runtimes.map { runtime in
+            DiagnosticsEntry(
+                runtime.id,
+                [
+                    runtime.source.rawValue,
+                    runtime.versionOutput.split(
+                        separator: "\n"
+                    ).first.map(String.init),
+                ]
+                .compactMap { $0 }
+                .joined(separator: " • ")
+            )
+        }
+        let sections = [
+            DiagnosticsSection(
+                title: "System",
+                entries: [
+                    DiagnosticsEntry(
+                        "macOS",
+                        processInfo.operatingSystemVersionString
+                    ),
+                    DiagnosticsEntry(
+                        "Architecture",
+                        Self.processArchitecture
+                    ),
+                    DiagnosticsEntry(
+                        "Physical Memory",
+                        physicalMemory
+                    ),
+                    DiagnosticsEntry(
+                        "Processors",
+                        String(processInfo.processorCount)
+                    ),
+                ]
+            ),
+            DiagnosticsSection(
+                title: "Runtimes",
+                entries: [
+                    DiagnosticsEntry(
+                        "Valid Count",
+                        String(runtimes.count)
+                    ),
+                    DiagnosticsEntry(
+                        "Selected",
+                        selectedRuntimeID ?? "none"
+                    ),
+                    DiagnosticsEntry(
+                        "Managed Installed",
+                        String(
+                            managedRuntimeSnapshot
+                                .installations.count
+                        )
+                    ),
+                    DiagnosticsEntry(
+                        "Managed Active",
+                        managedRuntimeSnapshot.activeRuntimeID
+                            ?? "none"
+                    ),
+                    DiagnosticsEntry(
+                        "Managed Previous",
+                        managedRuntimeSnapshot.previousRuntimeID
+                            ?? "none"
+                    ),
+                ] + runtimeEntries
+            ),
+            DiagnosticsSection(
+                title: "Models and Profiles",
+                entries: [
+                    DiagnosticsEntry(
+                        "Model Roots",
+                        String(modelDirectories.count + 1)
+                    ),
+                    DiagnosticsEntry(
+                        "Model Files",
+                        String(localModels.count)
+                    ),
+                    DiagnosticsEntry(
+                        "Model Bytes",
+                        String(localModelByteCount)
+                    ),
+                    DiagnosticsEntry(
+                        "Scan Issues",
+                        String(
+                            (modelScanSnapshot?.issues.count ?? 0)
+                                + modelDirectoryIssues.count
+                        )
+                    ),
+                    DiagnosticsEntry(
+                        "Profiles",
+                        String(profiles.count)
+                    ),
+                    DiagnosticsEntry(
+                        "Selected Profile",
+                        profile?.name ?? "none"
+                    ),
+                    DiagnosticsEntry(
+                        "Selected mmproj",
+                        profile?.model.mmprojPath == nil
+                            ? "no"
+                            : "yes"
+                    ),
+                    DiagnosticsEntry(
+                        "Selected Draft",
+                        profile?.model.draftPath == nil
+                            ? "no"
+                            : "yes"
+                    ),
+                ]
+            ),
+            DiagnosticsSection(
+                title: "Downloads",
+                entries: [
+                    DiagnosticsEntry(
+                        "Job Count",
+                        String(modelDownloadSnapshot.jobs.count)
+                    ),
+                    DiagnosticsEntry(
+                        "Active Job",
+                        modelDownloadSnapshot.activeJobID?
+                            .uuidString ?? "none"
+                    ),
+                    DiagnosticsEntry(
+                        "Hugging Face Token",
+                        isHuggingFaceTokenConfigured
+                            ? "configured in Keychain"
+                            : "not configured"
+                    ),
+                ] + downloadEntries
+            ),
+            DiagnosticsSection(
+                title: "Server",
+                entries: serverDiagnosticsEntries
+            ),
+            DiagnosticsSection(
+                title: "Updates",
+                entries: [
+                    DiagnosticsEntry(
+                        "LlamaDock App",
+                        appUpdateDiagnosticSummary
+                    ),
+                    DiagnosticsEntry(
+                        "llama.cpp Runtime",
+                        runtimeUpdateDiagnosticSummary
+                    ),
+                ]
+            ),
+        ]
+        return DiagnosticsReportBuilder().makeReport(
+            product: "LlamaDock",
+            version: appVersion,
+            build: appBuild,
+            generatedAt: generatedAt,
+            sections: sections
+        )
+    }
+
+    private static var processArchitecture: String {
+        #if arch(arm64)
+        "arm64"
+        #elseif arch(x86_64)
+        "x86_64"
+        #else
+        "unknown"
+        #endif
+    }
+
+    private var serverDiagnosticsEntries:
+        [DiagnosticsEntry]
+    {
+        var entries = [
+            DiagnosticsEntry(
+                "State",
+                serverStateDiagnosticName
+            ),
+            DiagnosticsEntry(
+                "Buffered Log Events",
+                String(serverSnapshot.logs.count)
+            ),
+        ]
+        if let run = serverSnapshot.run {
+            entries.append(
+                DiagnosticsEntry(
+                    "PID",
+                    String(run.processIdentifier)
+                )
+            )
+            entries.append(
+                DiagnosticsEntry(
+                    "Runtime",
+                    run.runtimeID
+                )
+            )
+            entries.append(
+                DiagnosticsEntry(
+                    "Endpoint",
+                    run.baseURL.absoluteString
+                )
+            )
+            entries.append(
+                DiagnosticsEntry(
+                    "Uptime Seconds",
+                    String(
+                        max(
+                            Int(
+                                Date().timeIntervalSince(
+                                    run.processStartTime
+                                )
+                            ),
+                            0
+                        )
+                    )
+                )
+            )
+        }
+        if let metrics = serverSnapshot.metrics {
+            entries.append(
+                DiagnosticsEntry(
+                    "CPU Percent",
+                    metrics.cpuPercent.map {
+                        String(format: "%.1f", $0)
+                    } ?? "sampling"
+                )
+            )
+            entries.append(
+                DiagnosticsEntry(
+                    "Resident Memory Bytes",
+                    String(metrics.residentMemoryBytes)
+                )
+            )
+            entries.append(
+                DiagnosticsEntry(
+                    "Virtual Memory Bytes",
+                    String(metrics.virtualMemoryBytes)
+                )
+            )
+            entries.append(
+                DiagnosticsEntry(
+                    "Threads",
+                    String(metrics.threadCount)
+                )
+            )
+        }
+        return entries
+    }
+
+    private var serverStateDiagnosticName: String {
+        switch serverSnapshot.state {
+        case .stopped:
+            "stopped"
+        case .starting:
+            "starting"
+        case .ready:
+            "ready"
+        case .degraded:
+            "degraded"
+        case .failed:
+            "failed"
+        case .stopping:
+            "stopping"
+        }
+    }
+
+    private var appUpdateDiagnosticSummary: String {
+        if let appUpdateCheck {
+            return appUpdateCheck.isUpdateAvailable
+                ? "update \(appUpdateCheck.release.version) available"
+                : "up to date"
+        }
+        return appUpdateError == nil
+            ? "not checked"
+            : "check failed"
+    }
+
+    private var runtimeUpdateDiagnosticSummary: String {
+        if let latestRuntimeRelease {
+            return "latest \(latestRuntimeRelease.release.tag)"
+        }
+        return runtimeUpdateError == nil
+            ? "not checked"
+            : "check failed"
+    }
+
     var isLatestManagedRuntimeInstalled: Bool {
         if let release = latestRuntimeRelease?.release {
             return managedRuntimeSnapshot.installations.contains(
@@ -1589,6 +1984,13 @@ final class AppModel {
     }
 
     private func checkRuntimeUpdatesIfDue() async {
+        guard
+            userDefaults.object(
+                forKey: "automaticallyCheckRuntimeUpdates"
+            ) as? Bool ?? true
+        else {
+            return
+        }
         if
             let lastCheck = userDefaults.object(
                 forKey: "lastManagedRuntimeUpdateCheck"
@@ -1613,6 +2015,25 @@ final class AppModel {
             return
         }
         await checkRuntimeUpdates(reportErrors: false)
+    }
+
+    private func checkAppUpdatesIfDue() async {
+        guard
+            userDefaults.object(
+                forKey: "automaticallyCheckAppUpdates"
+            ) as? Bool ?? true
+        else {
+            return
+        }
+        if
+            let lastCheck = userDefaults.object(
+                forKey: "lastAppUpdateCheck"
+            ) as? Date,
+            Date().timeIntervalSince(lastCheck) < 86_400
+        {
+            return
+        }
+        await checkAppUpdates(reportErrors: false)
     }
 
     private func beginRuntimeInstallMonitoring() {
@@ -1665,7 +2086,14 @@ final class AppModel {
                     break
                 }
 
-                try? await Task.sleep(for: .milliseconds(200))
+                let refreshInterval: Duration
+                switch snapshot.state {
+                case .ready, .degraded:
+                    refreshInterval = .milliseconds(500)
+                case .starting, .stopping, .failed, .stopped:
+                    refreshInterval = .milliseconds(200)
+                }
+                try? await Task.sleep(for: refreshInterval)
             }
         }
     }

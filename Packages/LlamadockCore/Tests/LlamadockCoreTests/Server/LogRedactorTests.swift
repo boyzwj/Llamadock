@@ -8,6 +8,7 @@ struct LogRedactorTests {
         let input = """
         Authorization: Bearer hf_super_secret
         HF_TOKEN=hf_another_secret
+        standalone hf_standalone_secret
         GET https://cdn.example/model.gguf?X-Amz-Signature=secret&token=also-secret
         """
 
@@ -18,6 +19,7 @@ struct LogRedactorTests {
         #expect(output.contains("https://cdn.example/model.gguf?<redacted>"))
         #expect(!output.contains("hf_super_secret"))
         #expect(!output.contains("hf_another_secret"))
+        #expect(!output.contains("hf_standalone_secret"))
         #expect(!output.contains("X-Amz-Signature"))
         #expect(!output.contains("also-secret"))
     }

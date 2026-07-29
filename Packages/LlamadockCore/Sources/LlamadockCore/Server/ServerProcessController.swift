@@ -67,15 +67,18 @@ public struct ServerSnapshot: Equatable, Sendable {
     public let state: ServerState
     public let run: ServerRun?
     public let logs: [LogEvent]
+    public let metrics: ServerProcessMetrics?
 
     public init(
         state: ServerState,
         run: ServerRun?,
-        logs: [LogEvent]
+        logs: [LogEvent],
+        metrics: ServerProcessMetrics? = nil
     ) {
         self.state = state
         self.run = run
         self.logs = logs
+        self.metrics = metrics
     }
 }
 
@@ -83,6 +86,7 @@ public actor ServerProcessController {
     private let launcher: any ServerProcessLaunching
     private let healthChecker: any ServerHealthChecking
     private let endpointChecker: any ServerEndpointChecking
+    private let metricsReader: any ProcessMetricsReading
     private var state: ServerState = .stopped
     private var run: ServerRun?
     private var ownedProcess: (any ManagedServerProcess)?
@@ -93,11 +97,14 @@ public actor ServerProcessController {
         launcher: any ServerProcessLaunching = FoundationServerProcessLauncher(),
         healthChecker: any ServerHealthChecking = LlamaServerHealthAdapter(),
         endpointChecker: any ServerEndpointChecking = SocketServerEndpointChecker(),
+        metricsReader: any ProcessMetricsReading =
+            ProcessMetricsReader(),
         logBuffer: BoundedLogBuffer = BoundedLogBuffer()
     ) {
         self.launcher = launcher
         self.healthChecker = healthChecker
         self.endpointChecker = endpointChecker
+        self.metricsReader = metricsReader
         self.logBuffer = logBuffer
     }
 
@@ -105,7 +112,17 @@ public actor ServerProcessController {
         ServerSnapshot(
             state: state,
             run: run,
-            logs: logBuffer.events
+            logs: logBuffer.events,
+            metrics: run.flatMap { currentRun in
+                guard ownedProcess != nil else {
+                    return nil
+                }
+                return metricsReader.sample(
+                    processIdentifier:
+                        currentRun.processIdentifier,
+                    now: Date()
+                )
+            }
         )
     }
 
@@ -145,6 +162,7 @@ public actor ServerProcessController {
 
         eventTask?.cancel()
         eventTask = nil
+        metricsReader.reset()
         run = nil
         state = .starting
         logBuffer.removeAll()
@@ -192,6 +210,7 @@ public actor ServerProcessController {
         guard let process = ownedProcess else {
             state = .stopped
             run = nil
+            metricsReader.reset()
             return
         }
 
@@ -212,6 +231,7 @@ public actor ServerProcessController {
         eventTask?.cancel()
         eventTask = nil
         run = nil
+        metricsReader.reset()
         state = .stopped
     }
 
@@ -244,6 +264,7 @@ public actor ServerProcessController {
                     reason: "Process exited before readiness."
                 )
                 ownedProcess = nil
+                metricsReader.reset()
                 eventTask?.cancel()
                 eventTask = nil
                 return
@@ -277,6 +298,7 @@ public actor ServerProcessController {
         )
         await process.forceTerminate()
         ownedProcess = nil
+        metricsReader.reset()
         eventTask?.cancel()
         eventTask = nil
     }
@@ -299,6 +321,7 @@ public actor ServerProcessController {
             )
         case .terminated(let status):
             ownedProcess = nil
+            metricsReader.reset()
             switch state {
             case .stopping:
                 state = .stopped

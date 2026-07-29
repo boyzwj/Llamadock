@@ -30,17 +30,17 @@ struct ServersView: View {
                 Button("Start", systemImage: "play.fill") {
                     Task { await appModel.startServer() }
                 }
-                .disabled(!canStart)
+                .disabled(!appModel.canStartServer)
 
                 Button("Stop", systemImage: "stop.fill") {
                     Task { await appModel.stopServer() }
                 }
-                .disabled(!canStop)
+                .disabled(!appModel.canStopServer)
 
                 Button("Restart", systemImage: "arrow.clockwise") {
                     Task { await appModel.restartServer() }
                 }
-                .disabled(!canStop)
+                .disabled(!appModel.canStopServer)
             }
         }
     }
@@ -63,6 +63,8 @@ struct ServersView: View {
                             .textSelection(.enabled)
                     }
                     LabeledContent("Runtime", value: run.runtimeID)
+
+                    serverMetrics(for: run)
 
                     HStack {
                         Button("Open WebUI", systemImage: "safari") {
@@ -96,7 +98,44 @@ struct ServersView: View {
             if appModel.isServerOperationInProgress {
                 ProgressView()
                     .controlSize(.small)
+                    .accessibilityLabel("Server operation in progress")
             }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Owned server status")
+    }
+
+    @ViewBuilder
+    private func serverMetrics(
+        for run: ServerRun
+    ) -> some View {
+        if let metrics = appModel.serverSnapshot.metrics {
+            HStack(spacing: 24) {
+                LabeledContent(
+                    "CPU",
+                    value: metrics.cpuPercent.map {
+                        String(format: "%.1f%%", $0)
+                    } ?? "Sampling"
+                )
+                LabeledContent(
+                    "Memory",
+                    value: formattedBytes(
+                        metrics.residentMemoryBytes
+                    )
+                )
+                LabeledContent(
+                    "Threads",
+                    value: String(metrics.threadCount)
+                )
+                LabeledContent(
+                    "Uptime",
+                    value: formattedUptime(
+                        since: run.processStartTime
+                    )
+                )
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Server performance")
         }
     }
 
@@ -129,27 +168,7 @@ struct ServersView: View {
             .padding(16)
         }
         .background(.black.opacity(0.03))
-    }
-
-    private var canStart: Bool {
-        guard
-            !appModel.isServerOperationInProgress,
-            appModel.selectedRuntime != nil,
-            appModel.profile != nil
-        else {
-            return false
-        }
-        return appModel.serverSnapshot.state == .stopped
-            || isFailed
-    }
-
-    private var canStop: Bool {
-        switch appModel.serverSnapshot.state {
-        case .starting, .ready, .degraded:
-            return true
-        case .stopped, .failed, .stopping:
-            return false
-        }
+        .accessibilityLabel("Server log")
     }
 
     private var stateTitle: String {
@@ -206,16 +225,41 @@ struct ServersView: View {
         return false
     }
 
-    private var isFailed: Bool {
-        if case .failed = appModel.serverSnapshot.state {
-            return true
-        }
-        return false
-    }
-
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private func formattedBytes(_ bytes: UInt64) -> String {
+        ByteCountFormatter.string(
+            fromByteCount: Int64(
+                min(bytes, UInt64(Int64.max))
+            ),
+            countStyle: .memory
+        )
+    }
+
+    private func formattedUptime(since start: Date) -> String {
+        let totalSeconds = max(
+            Int(Date().timeIntervalSince(start)),
+            0
+        )
+        let hours = totalSeconds / 3_600
+        let minutes = (totalSeconds % 3_600) / 60
+        let seconds = totalSeconds % 60
+        if hours > 0 {
+            return String(
+                format: "%d:%02d:%02d",
+                hours,
+                minutes,
+                seconds
+            )
+        }
+        return String(
+            format: "%d:%02d",
+            minutes,
+            seconds
+        )
     }
 }
 

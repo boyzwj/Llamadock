@@ -1,0 +1,166 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Sign, notarize, and publish
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+      NOTARY_PROFILE: llamadock-ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure ephemeral keychain path
+        run: |
+          printf 'KEYCHAIN_PATH=%s\n' \
+            "${RUNNER_TEMP}/llamadock-signing.keychain-db" \
+            >>"${GITHUB_ENV}"
+
+      - name: Verify tag and release contract
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          [[ "${GITHUB_REF_NAME}" == "v${version}" ]]
+          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          Scripts/verify-release-contract.sh
+          project_version="$(
+            xcodebuild \
+              -project Llamadock.xcodeproj \
+              -scheme Llamadock \
+              -configuration Release \
+              -showBuildSettings |
+              awk -F ' = ' '/MARKETING_VERSION/ {
+                print $2
+                exit
+              }'
+          )"
+          [[ "${version}" == "${project_version}" ]]
+
+      - name: Test core
+        run: swift test --package-path Packages/LlamadockCore
+
+      - name: Require signing secrets
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in \
+            APPLE_CERTIFICATE_BASE64 \
+            APPLE_CERTIFICATE_PASSWORD \
+            APPLE_SIGNING_IDENTITY \
+            APPLE_TEAM_ID \
+            APPLE_ID \
+            APPLE_APP_SPECIFIC_PASSWORD
+          do
+            [[ -n "${!name}" ]] || {
+              printf 'Missing required secret: %s\n' "${name}" >&2
+              exit 1
+            }
+          done
+
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          certificate_path="${RUNNER_TEMP}/developer-id.p12"
+          printf '%s' "${APPLE_CERTIFICATE_BASE64}" |
+            base64 --decode >"${certificate_path}"
+          security create-keychain \
+            -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          security set-keychain-settings \
+            -lut 21600 "${KEYCHAIN_PATH}"
+          security unlock-keychain \
+            -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          security import "${certificate_path}" \
+            -k "${KEYCHAIN_PATH}" \
+            -P "${APPLE_CERTIFICATE_PASSWORD}" \
+            -A -t cert -f pkcs12
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "${KEYCHAIN_PASSWORD}" \
+            "${KEYCHAIN_PATH}"
+          security list-keychains \
+            -d user \
+            -s "${KEYCHAIN_PATH}"
+          security find-identity \
+            -v \
+            -p codesigning \
+            "${KEYCHAIN_PATH}"
+
+      - name: Store notarization credentials
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          xcrun notarytool store-credentials \
+            "${NOTARY_PROFILE}" \
+            --apple-id "${APPLE_ID}" \
+            --team-id "${APPLE_TEAM_ID}" \
+            --password "${APPLE_APP_SPECIFIC_PASSWORD}" \
+            --keychain "${KEYCHAIN_PATH}"
+
+      - name: Package signed and notarized release
+        env:
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARY_KEYCHAIN_PROFILE: ${{ env.NOTARY_PROFILE }}
+          NOTARY_KEYCHAIN: ${{ env.KEYCHAIN_PATH }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: Scripts/package-release.sh
+
+      - name: Verify release assets
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          cd dist/release
+          shasum -a 256 -c \
+            "LlamaDock-${version}-macOS-arm64.zip.sha256"
+          shasum -a 256 -c \
+            "LlamaDock-${version}-dSYM.zip.sha256"
+          [[ -s "LlamaDock-${version}-macOS-arm64.zip" ]]
+          [[ -s "LlamaDock-${version}-dSYM.zip" ]]
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          gh release create "${GITHUB_REF_NAME}" \
+            "dist/release/LlamaDock-${version}-macOS-arm64.zip" \
+            "dist/release/LlamaDock-${version}-macOS-arm64.zip.sha256" \
+            "dist/release/LlamaDock-${version}-dSYM.zip" \
+            "dist/release/LlamaDock-${version}-dSYM.zip.sha256" \
+            --verify-tag \
+            --generate-notes \
+            --title "LlamaDock ${GITHUB_REF_NAME}"
+
+      - name: Remove temporary keychain
+        if: always()
+        run: |
+          security delete-keychain "${KEYCHAIN_PATH}" \
+            >/dev/null 2>&1 || true
