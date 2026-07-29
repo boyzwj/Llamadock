@@ -188,6 +188,7 @@ final class AppModel {
                     ? requestedID
                     : nil
             } ?? profiles.first?.id
+            persistSelectedProfileID()
             if let restoredProfile = profile {
                 selectedModelURL = URL(
                     filePath: restoredProfile.model.mainPath,
