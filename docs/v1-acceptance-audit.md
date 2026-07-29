@@ -32,7 +32,9 @@ Last source audit: 2026-07-30.
 ## Models
 
 - [x] Multiple directory scan: versioned security-scoped bookmark envelopes and
-  the App-owned model root feed `LocalModelScanner`.
+  the App-owned model root feed `LocalModelScanner`; a native recursive
+  FSEvents stream coalesces filesystem changes before background rescans
+  without continuous polling.
 - [x] GGUF metadata is visible: the bounded v2/v3 reader extracts identity,
   architecture, context, tensor, split, quantization, template, and companion
   hints without reading tensor data.
@@ -85,8 +87,8 @@ Last source audit: 2026-07-30.
 
 ## Release
 
-- [x] Swift tests and unsigned App builds pass: the current suite contains 144
-  tests in 39 suites, and CI runs both Core tests and the macOS App build.
+- [x] Swift tests and unsigned App builds pass: the current suite contains 146
+  tests in 40 suites, and CI runs both Core tests and the macOS App build.
 - [ ] Developer ID signature and Apple notarization: implementation and
   fail-closed automation exist, but credentials and a successful candidate run
   are still pending.

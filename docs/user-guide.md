@@ -59,6 +59,11 @@ digests, and bounded GGUF structure before atomically importing files.
 Split GGUF sets, an optional vision projector (`mmproj`), and an optional draft
 model are grouped into one Profile.
 
+LlamaDock observes all configured model roots recursively with native macOS
+FSEvents. Finder additions, removals, and renames are coalesced briefly and then
+refresh the library automatically without continuous polling. Use **Refresh**
+if a disconnected volume or filesystem does not deliver an event.
+
 Use **Move to Trash** from the selected model, toolbar, or context menu to
 remove one GGUF file through the macOS Trash. The confirmation names the exact
 file and reports how many saved Profiles still reference it. LlamaDock never

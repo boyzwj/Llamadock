@@ -93,6 +93,8 @@ final class AppModel {
     private let applicationDirectories: ApplicationDirectories
     private let modelDirectoryStore: JSONModelDirectoryStore
     private let modelScanner: LocalModelScanner
+    private let modelDirectoryChangeMonitor:
+        any ModelDirectoryChangeMonitoring
     private let modelRemovalPlanner: LocalModelRemovalPlanner
     private let modelTrasher: any LocalModelTrashing
     private let huggingFaceClient: any HuggingFaceHubServing
@@ -106,6 +108,8 @@ final class AppModel {
     private var serverMonitorTask: Task<Void, Never>?
     private var runtimeInstallMonitorTask: Task<Void, Never>?
     private var modelDownloadMonitorTask: Task<Void, Never>?
+    private var modelDirectoryMonitorTask: Task<Void, Never>?
+    private var monitoredModelDirectoryPaths: [String] = []
     private var serverModelSecurityScopes: [URL] = []
     private var serverModelURLs: [URL] = []
     private var observedCompletedDownloadIDs: Set<UUID> = []
@@ -131,6 +135,9 @@ final class AppModel {
         managedRuntimeInstaller: ManagedRuntimeInstaller? = nil,
         modelDirectoryStore: JSONModelDirectoryStore? = nil,
         modelScanner: LocalModelScanner = LocalModelScanner(),
+        modelDirectoryChangeMonitor: (
+            any ModelDirectoryChangeMonitoring
+        ) = FSEventsModelDirectoryChangeMonitor(),
         modelRemovalPlanner: LocalModelRemovalPlanner =
             LocalModelRemovalPlanner(),
         modelTrasher: (any LocalModelTrashing)? = nil,
@@ -169,6 +176,8 @@ final class AppModel {
                 fileURL: directories.settings
             )
         self.modelScanner = modelScanner
+        self.modelDirectoryChangeMonitor =
+            modelDirectoryChangeMonitor
         self.modelRemovalPlanner = modelRemovalPlanner
         self.modelTrasher = modelTrasher
             ?? FileManagerLocalModelTrasher()
@@ -664,9 +673,14 @@ final class AppModel {
                 }
             }
 
+            let modelRoots = [
+                applicationDirectories.models
+            ] + externalURLs
+            beginModelDirectoryMonitor(
+                roots: modelRoots
+            )
             let snapshot = try await modelScanner.scan(
-                roots: [applicationDirectories.models]
-                    + externalURLs
+                roots: modelRoots
             )
             modelScanSnapshot = snapshot
 
@@ -1413,6 +1427,9 @@ final class AppModel {
         await modelDownloadManager.suspendForTermination()
         modelDownloadMonitorTask?.cancel()
         modelDownloadMonitorTask = nil
+        modelDirectoryMonitorTask?.cancel()
+        modelDirectoryMonitorTask = nil
+        monitoredModelDirectoryPaths = []
         await serverController.stop()
         endServerModelSecurityScope()
         serverMonitorTask?.cancel()
@@ -1653,6 +1670,64 @@ final class AppModel {
                         ? 1_000_000_000
                         : 250_000_000
                 )
+            }
+        }
+    }
+
+    private func beginModelDirectoryMonitor(
+        roots: [URL]
+    ) {
+        var seenPaths = Set<String>()
+        let uniqueRoots = roots.compactMap { root in
+            let standardized = root.standardizedFileURL
+            return seenPaths.insert(
+                standardized.path
+            ).inserted
+                ? standardized
+                : nil
+        }
+        let paths = uniqueRoots
+            .map(\.path)
+            .sorted()
+        guard paths != monitoredModelDirectoryPaths else {
+            return
+        }
+
+        modelDirectoryMonitorTask?.cancel()
+        monitoredModelDirectoryPaths = paths
+        let changes = modelDirectoryChangeMonitor.changes(
+            in: uniqueRoots
+        )
+        modelDirectoryMonitorTask = Task { [weak self] in
+            defer {
+                if self?.monitoredModelDirectoryPaths == paths {
+                    self?.modelDirectoryMonitorTask = nil
+                    self?.monitoredModelDirectoryPaths = []
+                }
+            }
+            for await _ in changes {
+                guard
+                    !Task.isCancelled,
+                    let self
+                else {
+                    return
+                }
+                do {
+                    try await Task.sleep(
+                        for: .milliseconds(300)
+                    )
+                    while self.isRefreshingModels {
+                        try await Task.sleep(
+                            for: .milliseconds(50)
+                        )
+                    }
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else {
+                    return
+                }
+                await self.refreshModels()
             }
         }
     }
