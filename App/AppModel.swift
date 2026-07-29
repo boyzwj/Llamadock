@@ -27,6 +27,7 @@ final class AppModel {
     var huggingFaceReference: HuggingFaceRepositoryReference?
     var huggingFaceCatalog: HuggingFaceRepositoryCatalog?
     var selectedHuggingFaceArtifactID: String?
+    var selectedHuggingFaceCompanionArtifactIDs: Set<String> = []
     var isSearchingHuggingFace = false
     var isLoadingHuggingFaceRepository = false
     var huggingFaceError: String?
@@ -88,6 +89,8 @@ final class AppModel {
     private let huggingFaceClient: any HuggingFaceHubServing
     private let huggingFaceTokenStore: any HuggingFaceTokenStoring
     private let modelDownloadManager: ModelDownloadManager
+    private let modelDownloadProfileFactory:
+        ModelDownloadProfileFactory
     private let serverController: ServerProcessController
     private let userDefaults: UserDefaults
     private var didBootstrap = false
@@ -119,7 +122,10 @@ final class AppModel {
         huggingFaceTokenStore: (
             any HuggingFaceTokenStoring
         )? = nil,
-        modelDownloadManager: ModelDownloadManager? = nil
+        modelDownloadManager: ModelDownloadManager? = nil,
+        modelDownloadProfileFactory:
+            ModelDownloadProfileFactory =
+                ModelDownloadProfileFactory()
     ) {
         self.runtimeDiscovery = runtimeDiscovery
         self.runtimeProbe = runtimeProbe
@@ -157,6 +163,8 @@ final class AppModel {
                 directories: directories,
                 tokenStore: tokenStore
             )
+        self.modelDownloadProfileFactory =
+            modelDownloadProfileFactory
 
         let registry: any ManagedRuntimeRegistering
         if let managedRuntimeRegistry {
@@ -250,6 +258,9 @@ final class AppModel {
                     selectedRuntimeID = runtimeID
                 }
             }
+            await reconcileCompletedDownloadProfiles(
+                selectNewProfile: selectedProfileID == nil
+            )
         } catch {
             visibleError = "Could not restore profiles: \(error.localizedDescription)"
         }
@@ -748,7 +759,48 @@ final class AppModel {
     func selectHuggingFaceArtifact(
         _ id: String?
     ) {
+        guard
+            let id,
+            huggingFaceCatalog?.artifacts.first(
+                where: {
+                    $0.id == id
+                        && $0.role == .main
+                }
+            ) != nil
+        else {
+            selectedHuggingFaceArtifactID = nil
+            return
+        }
         selectedHuggingFaceArtifactID = id
+    }
+
+    func setHuggingFaceCompanionArtifact(
+        _ id: String,
+        selected: Bool
+    ) {
+        guard
+            let artifact = huggingFaceCatalog?.artifacts.first(
+                where: {
+                    $0.id == id
+                        && $0.role != .main
+                        && $0.isComplete
+                }
+            )
+        else {
+            return
+        }
+        if selected {
+            let sameRoleIDs = Set(
+                huggingFaceCatalog?.artifacts.compactMap {
+                    $0.role == artifact.role ? $0.id : nil
+                } ?? []
+            )
+            selectedHuggingFaceCompanionArtifactIDs
+                .subtract(sameRoleIDs)
+            selectedHuggingFaceCompanionArtifactIDs.insert(id)
+        } else {
+            selectedHuggingFaceCompanionArtifactIDs.remove(id)
+        }
     }
 
     func refreshHuggingFaceTokenState() {
@@ -799,26 +851,43 @@ final class AppModel {
                 """
             return
         }
+        if
+            let repository = selectedHuggingFaceRepository,
+            (
+                repository.gated.requiresAuthentication
+                    || repository.isPrivate
+            ),
+            !isHuggingFaceTokenConfigured
+        {
+            modelDownloadError = """
+                Add a Hugging Face token in Settings before downloading \
+                this restricted repository.
+                """
+            return
+        }
         modelDownloadError = nil
         do {
+            let artifacts = selectedHuggingFaceDownloadArtifacts
             let request = ModelDownloadRequest(
                 reference: reference,
                 displayName: artifact.displayName,
                 quantization: artifact.quantization,
-                files: artifact.files.map { file in
-                    ModelDownloadRequestFile(
-                        artifactID: artifact.id,
-                        artifactDisplayName:
-                            artifact.displayName,
-                        role: artifact.role,
-                        repositoryPath:
-                            file.repositoryFile.path,
-                        expectedSize:
-                            file.repositoryFile.size,
-                        expectedSHA256:
-                            file.repositoryFile
-                                .expectedSHA256
-                    )
+                files: artifacts.flatMap { selectedArtifact in
+                    selectedArtifact.files.map { file in
+                        ModelDownloadRequestFile(
+                            artifactID: selectedArtifact.id,
+                            artifactDisplayName:
+                                selectedArtifact.displayName,
+                            role: selectedArtifact.role,
+                            repositoryPath:
+                                file.repositoryFile.path,
+                            expectedSize:
+                                file.repositoryFile.size,
+                            expectedSHA256:
+                                file.repositoryFile
+                                    .expectedSHA256
+                        )
+                    }
                 }
             )
             _ = try await modelDownloadManager.enqueue(
@@ -1164,6 +1233,35 @@ final class AppModel {
         }
     }
 
+    var selectedHuggingFaceCompanionArtifacts:
+        [HuggingFaceGGUFArtifact]
+    {
+        (huggingFaceCatalog?.artifacts ?? [])
+            .filter {
+                selectedHuggingFaceCompanionArtifactIDs
+                    .contains($0.id)
+            }
+            .sorted {
+                if $0.role == $1.role {
+                    return $0.displayName
+                        .localizedStandardCompare(
+                            $1.displayName
+                        ) == .orderedAscending
+                }
+                return $0.role == .mmproj
+            }
+    }
+
+    var selectedHuggingFaceDownloadArtifacts:
+        [HuggingFaceGGUFArtifact]
+    {
+        guard let selectedHuggingFaceArtifact else {
+            return []
+        }
+        return [selectedHuggingFaceArtifact]
+            + selectedHuggingFaceCompanionArtifacts
+    }
+
     var selectedHuggingFaceArtifactDownloadJob: ModelDownloadJob? {
         guard
             let reference = huggingFaceReference,
@@ -1171,12 +1269,15 @@ final class AppModel {
         else {
             return nil
         }
+        let selectedArtifactIDs = Set(
+            selectedHuggingFaceDownloadArtifacts.map(\.id)
+        )
         return modelDownloadSnapshot.jobs.last {
             $0.repositoryID == reference.repositoryID
                 && $0.revision == reference.revision
-                && $0.files.contains {
-                    $0.artifactID == artifact.id
-                }
+                && Set($0.files.map(\.artifactID))
+                    == selectedArtifactIDs
+                && selectedArtifactIDs.contains(artifact.id)
                 && $0.state != .cancelled
         }
     }
@@ -1202,6 +1303,7 @@ final class AppModel {
         huggingFaceReference = reference
         huggingFaceCatalog = nil
         selectedHuggingFaceArtifactID = nil
+        selectedHuggingFaceCompanionArtifactIDs = []
         defer { isLoadingHuggingFaceRepository = false }
 
         let files = try await huggingFaceClient.repositoryFiles(
@@ -1224,7 +1326,9 @@ final class AppModel {
                     == preferredQuantization
         }?.id ?? catalog.artifacts.first {
             $0.role == .main && $0.isComplete
-        }?.id ?? catalog.artifacts.first?.id
+        }?.id ?? catalog.artifacts.first {
+            $0.role == .main
+        }?.id
     }
 
     private func isHuggingFaceReference(
@@ -1276,6 +1380,13 @@ final class AppModel {
                 self.observedCompletedDownloadIDs = completed
                 if !newlyCompleted.isEmpty {
                     await self.refreshModels()
+                    for job in snapshot.jobs
+                    where newlyCompleted.contains(job.id) {
+                        await self.ensureProfile(
+                            for: job,
+                            select: true
+                        )
+                    }
                 }
 
                 try? await Task.sleep(
@@ -1285,6 +1396,90 @@ final class AppModel {
                 )
             }
         }
+    }
+
+    private func reconcileCompletedDownloadProfiles(
+        selectNewProfile: Bool
+    ) async {
+        var shouldSelect = selectNewProfile
+        for job in modelDownloadSnapshot.jobs
+        where job.state == .completed {
+            _ = await ensureProfile(
+                for: job,
+                select: shouldSelect
+            )
+            if shouldSelect {
+                shouldSelect = false
+            }
+        }
+    }
+
+    @discardableResult
+    private func ensureProfile(
+        for job: ModelDownloadJob,
+        select: Bool
+    ) async -> Bool {
+        do {
+            let candidate = try modelDownloadProfileFactory
+                .makeProfile(
+                    for: job,
+                    modelsRoot: applicationDirectories.models,
+                    runtimeID: selectedRuntimeID
+                )
+            if
+                let existing = profiles.first(
+                    where: {
+                        canonicalPath($0.model.mainPath)
+                            == canonicalPath(
+                                candidate.model.mainPath
+                            )
+                            && canonicalOptionalPath(
+                                $0.model.mmprojPath
+                            )
+                                == canonicalOptionalPath(
+                                    candidate.model.mmprojPath
+                                )
+                            && canonicalOptionalPath(
+                                $0.model.draftPath
+                            )
+                                == canonicalOptionalPath(
+                                    candidate.model.draftPath
+                                )
+                    }
+                )
+            {
+                if select {
+                    selectProfile(existing.id)
+                }
+                return false
+            }
+
+            try await profileStore.save(candidate)
+            profiles.append(candidate)
+            profiles.sort {
+                if $0.updatedAt == $1.updatedAt {
+                    return $0.id.uuidString
+                        < $1.id.uuidString
+                }
+                return $0.updatedAt > $1.updatedAt
+            }
+            if select {
+                selectProfile(candidate.id)
+            }
+            return true
+        } catch {
+            modelDownloadError = """
+                Model import completed, but its launch profile could not \
+                be created: \(error.localizedDescription)
+                """
+            return false
+        }
+    }
+
+    private func canonicalOptionalPath(
+        _ path: String?
+    ) -> String? {
+        path.map(canonicalPath)
     }
 
     var canChangeManagedRuntime: Bool {

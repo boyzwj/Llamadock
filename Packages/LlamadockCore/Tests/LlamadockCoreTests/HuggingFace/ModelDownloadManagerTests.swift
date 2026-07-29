@@ -11,9 +11,9 @@ struct ModelDownloadManagerTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let directories = ApplicationDirectories(root: root)
         let payloads = [
-            Data("first".utf8),
-            Data("second".utf8),
-            Data("projector".utf8),
+            minimalGGUF(name: "first"),
+            minimalGGUF(name: "second"),
+            minimalGGUF(name: "projector"),
         ]
         let transport = FixtureModelDownloadTransport(
             payloads: payloads
@@ -96,14 +96,15 @@ struct ModelDownloadManagerTests {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let directories = ApplicationDirectories(root: root)
+        let fullPayload = minimalGGUF(name: "resumed")
+        let prefixLength = 17
         let firstManager = ModelDownloadManager(
             directories: directories,
             transport: BlockingPartialModelDownloadTransport(
-                prefix: Data("abc".utf8)
+                prefix: Data(fullPayload.prefix(prefixLength))
             ),
             tokenStore: StaticHuggingFaceTokenStore()
         )
-        let fullPayload = Data("abcdef".utf8)
         let id = try await firstManager.enqueue(
             request(
                 files: [
@@ -125,13 +126,15 @@ struct ModelDownloadManagerTests {
         try await waitForPartialFile(
             id: id,
             directories: directories,
-            minimumSize: 3
+            minimumSize: Int64(prefixLength)
         )
         try await firstManager.pause(id: id)
         _ = try await waitForNoActiveJob(firstManager)
 
         let resumeTransport = FixtureModelDownloadTransport(
-            payloads: [Data("def".utf8)]
+            payloads: [
+                Data(fullPayload.dropFirst(prefixLength))
+            ]
         )
         let restoredManager = ModelDownloadManager(
             directories: directories,
@@ -145,7 +148,7 @@ struct ModelDownloadManagerTests {
             }
         )
         #expect(paused.state == .paused)
-        #expect(paused.receivedBytes == 3)
+        #expect(paused.receivedBytes == prefixLength)
 
         try await restoredManager.resume(id: id)
         let completed = try await waitForState(
@@ -156,11 +159,11 @@ struct ModelDownloadManagerTests {
         let transfer = try #require(
             await resumeTransport.transfers().first
         )
-        #expect(transfer.existingByteCount == 3)
+        #expect(transfer.existingByteCount == prefixLength)
         #expect(
             transfer.request.value(
                 forHTTPHeaderField: "Range"
-            ) == "bytes=3-"
+            ) == "bytes=\(prefixLength)-"
         )
         let installed = directories.models
             .appending(
@@ -270,6 +273,43 @@ struct ModelDownloadManagerTests {
         )
     }
 
+    @Test("rejects a checksum-valid file without GGUF structure")
+    func rejectsInvalidGGUF() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let payload = Data("not-a-gguf".utf8)
+        let manager = ModelDownloadManager(
+            directories: ApplicationDirectories(root: root),
+            transport: FixtureModelDownloadTransport(
+                payloads: [payload]
+            ),
+            tokenStore: StaticHuggingFaceTokenStore()
+        )
+        let id = try await manager.enqueue(
+            request(
+                files: [
+                    requestFile(
+                        artifactID: "main",
+                        role: .main,
+                        path: "model.gguf",
+                        payload: payload
+                    ),
+                ]
+            )
+        )
+
+        let failed = try await waitForState(
+            .failed,
+            id: id,
+            manager: manager
+        )
+        #expect(
+            failed.error?.contains("not a valid GGUF") == true
+        )
+        #expect(failed.files[0].receivedBytes == 0)
+        #expect(!failed.files[0].isVerified)
+    }
+
     @Test("rejects an insecure resolved model URL")
     func rejectsInsecureResolvedURL() async throws {
         let root = temporaryRoot()
@@ -307,6 +347,151 @@ struct ModelDownloadManagerTests {
             failed.error?.contains("must use HTTPS") == true
         )
         #expect(await transport.transfers().isEmpty)
+    }
+
+    @Test("rejects overlapping paths and duplicate companion roles")
+    func rejectsAmbiguousArtifactGroups() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = ModelDownloadManager(
+            directories: ApplicationDirectories(root: root),
+            transport: FixtureModelDownloadTransport(
+                payloads: []
+            ),
+            tokenStore: StaticHuggingFaceTokenStore()
+        )
+        let payload = minimalGGUF(name: "ambiguous")
+
+        await #expect(throws: ModelDownloadManagerError.self) {
+            _ = try await manager.enqueue(
+                request(
+                    files: [
+                        requestFile(
+                            artifactID: "main",
+                            role: .main,
+                            path: "same.gguf",
+                            payload: payload
+                        ),
+                        requestFile(
+                            artifactID: "mmproj",
+                            role: .mmproj,
+                            path: "same.gguf",
+                            payload: payload
+                        ),
+                    ]
+                )
+            )
+        }
+
+        await #expect(throws: ModelDownloadManagerError.self) {
+            _ = try await manager.enqueue(
+                request(
+                    files: [
+                        requestFile(
+                            artifactID: "main",
+                            role: .main,
+                            path: "main.gguf",
+                            payload: payload
+                        ),
+                        requestFile(
+                            artifactID: "mmproj-a",
+                            role: .mmproj,
+                            path: "mmproj-a.gguf",
+                            payload: payload
+                        ),
+                        requestFile(
+                            artifactID: "mmproj-b",
+                            role: .mmproj,
+                            path: "mmproj-b.gguf",
+                            payload: payload
+                        ),
+                    ]
+                )
+            )
+        }
+    }
+
+    @Test("does not restore an incomplete final directory as completed")
+    func rejectsIncompleteRestoredImport() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directories = ApplicationDirectories(root: root)
+        let payload = minimalGGUF(name: "restored")
+        let now = Date()
+        let id = UUID()
+        let files = [
+            ModelDownloadFile(
+                artifactID: "main",
+                artifactDisplayName: "main",
+                role: .main,
+                repositoryPath:
+                    "model-00001-of-00002.gguf",
+                expectedSize: Int64(payload.count),
+                expectedSHA256: sha256(payload),
+                receivedBytes: Int64(payload.count),
+                isVerified: true
+            ),
+            ModelDownloadFile(
+                artifactID: "main",
+                artifactDisplayName: "main",
+                role: .main,
+                repositoryPath:
+                    "model-00002-of-00002.gguf",
+                expectedSize: Int64(payload.count),
+                expectedSHA256: sha256(payload),
+                receivedBytes: Int64(payload.count),
+                isVerified: true
+            ),
+        ]
+        let job = ModelDownloadJob(
+            id: id,
+            repositoryID: "owner/repo",
+            revision: "main",
+            displayName: "restored",
+            quantization: nil,
+            destinationRelativeDirectory:
+                "huggingface/owner/repo/main/restored",
+            files: files,
+            state: .completed,
+            error: nil,
+            createdAt: now,
+            updatedAt: now
+        )
+        try await JSONModelDownloadStore(
+            fileURL: directories.downloadState
+        ).saveJobs([job])
+        let finalDirectory = directories.models.appending(
+            path: job.destinationRelativeDirectory,
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(
+            at: finalDirectory,
+            withIntermediateDirectories: true
+        )
+        try payload.write(
+            to: finalDirectory.appending(
+                path: files[0].repositoryPath
+            )
+        )
+
+        let manager = ModelDownloadManager(
+            directories: directories,
+            transport: FixtureModelDownloadTransport(
+                payloads: []
+            ),
+            tokenStore: StaticHuggingFaceTokenStore()
+        )
+        try await manager.restore()
+        let restored = try #require(
+            await manager.snapshot().jobs.first
+        )
+
+        #expect(restored.state == .failed)
+        #expect(
+            restored.error?.contains(
+                "will not overwrite"
+            ) == true
+        )
     }
 
     @Test("strips authorization on cross-host redirects")
@@ -382,6 +567,38 @@ struct ModelDownloadManagerTests {
         SHA256.hash(data: data).map {
             String(format: "%02x", $0)
         }.joined()
+    }
+
+    private func minimalGGUF(
+        name: String
+    ) -> Data {
+        let entries = [
+            ("general.architecture", "llama"),
+            ("general.type", "model"),
+            ("general.name", name),
+        ]
+        var data = Data("GGUF".utf8)
+        data.appendLittleEndian(UInt32(3))
+        data.appendLittleEndian(UInt64(1))
+        data.appendLittleEndian(UInt64(entries.count))
+        for (key, value) in entries {
+            data.appendGGUFString(key)
+            data.appendLittleEndian(UInt32(8))
+            data.appendGGUFString(value)
+        }
+        data.appendGGUFString("weight")
+        data.appendLittleEndian(UInt32(1))
+        data.appendLittleEndian(UInt64(4))
+        data.appendLittleEndian(UInt32(0))
+        data.appendLittleEndian(UInt64(0))
+        let remainder = data.count % 32
+        if remainder != 0 {
+            data.append(
+                Data(repeating: 0, count: 32 - remainder)
+            )
+        }
+        data.append(Data(repeating: 0, count: 16))
+        return data
     }
 
     private func temporaryRoot() -> URL {
@@ -627,4 +844,27 @@ private func write(
         try handle.truncate(atOffset: 0)
     }
     try handle.write(contentsOf: data)
+}
+
+private extension Data {
+    mutating func appendLittleEndian<T: FixedWidthInteger>(
+        _ value: T
+    ) {
+        for byteIndex in 0..<MemoryLayout<T>.size {
+            append(
+                UInt8(
+                    truncatingIfNeeded:
+                        value >> T(byteIndex * 8)
+                )
+            )
+        }
+    }
+
+    mutating func appendGGUFString(
+        _ value: String
+    ) {
+        let encoded = Data(value.utf8)
+        appendLittleEndian(UInt64(encoded.count))
+        append(encoded)
+    }
 }

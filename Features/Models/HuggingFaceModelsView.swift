@@ -269,12 +269,19 @@ struct HuggingFaceModelsView: View {
     private func artifactCatalog(
         _ catalog: HuggingFaceRepositoryCatalog
     ) -> some View {
-        if catalog.artifacts.isEmpty {
+        let mainArtifacts = catalog.artifacts.filter {
+            $0.role == .main
+        }
+        let companionArtifacts = catalog.artifacts.filter {
+            $0.role != .main
+        }
+
+        if mainArtifacts.isEmpty {
             ContentUnavailableView(
-                "No GGUF Artifacts",
+                "No Main GGUF Artifacts",
                 systemImage: "doc.questionmark",
                 description: Text(
-                    "The repository file tree did not contain a safe .gguf file."
+                    "The repository file tree did not contain a safe main .gguf artifact."
                 )
             )
             .frame(minHeight: 260)
@@ -283,7 +290,7 @@ struct HuggingFaceModelsView: View {
                 Text("GGUF Artifacts")
                     .font(.headline)
 
-                ForEach(catalog.artifacts) { artifact in
+                ForEach(mainArtifacts) { artifact in
                     Button {
                         appModel.selectHuggingFaceArtifact(
                             artifact.id
@@ -295,8 +302,18 @@ struct HuggingFaceModelsView: View {
                 }
             }
 
-            if let artifact = appModel.selectedHuggingFaceArtifact {
-                artifactManifest(artifact)
+            if !companionArtifacts.isEmpty {
+                companionPicker(companionArtifacts)
+            }
+
+            if
+                let artifact = appModel
+                    .selectedHuggingFaceArtifact
+            {
+                artifactManifest(
+                    appModel.selectedHuggingFaceDownloadArtifacts,
+                    primary: artifact
+                )
             }
 
             if !catalog.ignoredPaths.isEmpty {
@@ -306,6 +323,62 @@ struct HuggingFaceModelsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private func companionPicker(
+        _ artifacts: [HuggingFaceGGUFArtifact]
+    ) -> some View {
+        GroupBox("Optional Companions") {
+            VStack(alignment: .leading, spacing: 9) {
+                Text(
+                    "Choose at most one vision projector and one draft model. Selected companions share the main model's download, verification, import, and Profile transaction."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                ForEach(artifacts) { artifact in
+                    Toggle(
+                        isOn: Binding(
+                            get: {
+                                appModel
+                                    .selectedHuggingFaceCompanionArtifactIDs
+                                    .contains(artifact.id)
+                            },
+                            set: { selected in
+                                appModel
+                                    .setHuggingFaceCompanionArtifact(
+                                        artifact.id,
+                                        selected: selected
+                                    )
+                            }
+                        )
+                    ) {
+                        HStack {
+                            Label(
+                                artifact.displayName,
+                                systemImage: artifact.role.icon
+                            )
+                            Spacer()
+                            Text(byteCount(artifact.totalSize))
+                                .foregroundStyle(.secondary)
+                            if let quantization = artifact.quantization {
+                                Text(quantization)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .font(.caption)
+                    }
+                    .toggleStyle(.checkbox)
+                    .disabled(!artifact.isComplete)
+                    .help(
+                        artifact.isComplete
+                            ? "Include this companion in the atomic download and generated Profile."
+                            : "This split companion is incomplete and cannot be selected."
+                    )
+                }
+            }
+            .padding(.top, 4)
         }
     }
 
@@ -375,66 +448,89 @@ struct HuggingFaceModelsView: View {
     }
 
     private func artifactManifest(
-        _ artifact: HuggingFaceGGUFArtifact
+        _ artifacts: [HuggingFaceGGUFArtifact],
+        primary: HuggingFaceGGUFArtifact
     ) -> some View {
         GroupBox("Selected Artifact Manifest") {
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(artifact.files) { file in
-                    VStack(alignment: .leading, spacing: 3) {
+                ForEach(artifacts) { artifact in
+                    VStack(alignment: .leading, spacing: 7) {
                         HStack {
-                            Text(file.repositoryFile.path)
-                                .font(
-                                    .system(
-                                        .caption,
-                                        design: .monospaced
-                                    )
-                                )
-                                .textSelection(.enabled)
-                            Spacer()
-                            Text(
-                                byteCount(
-                                    file.repositoryFile.size
-                                )
+                            Label(
+                                artifact.role.title,
+                                systemImage: artifact.role.icon
                             )
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.caption.bold())
+                            Text(artifact.displayName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
 
-                        if
-                            let sha256 = file.repositoryFile
-                                .expectedSHA256
-                        {
-                            Text("SHA-256 \(sha256)")
-                                .font(
-                                    .system(
-                                        .caption2,
-                                        design: .monospaced
+                        ForEach(artifact.files) { file in
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack {
+                                    Text(file.repositoryFile.path)
+                                        .font(
+                                            .system(
+                                                .caption,
+                                                design: .monospaced
+                                            )
+                                        )
+                                        .textSelection(.enabled)
+                                    Spacer()
+                                    Text(
+                                        byteCount(
+                                            file.repositoryFile.size
+                                        )
                                     )
-                                )
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        } else {
-                            Text(
-                                "No SHA-256 digest declared by the Hub."
-                            )
-                            .font(.caption2)
-                            .foregroundStyle(.orange)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                }
+
+                                if
+                                    let sha256 = file.repositoryFile
+                                        .expectedSHA256
+                                {
+                                    Text("SHA-256 \(sha256)")
+                                        .font(
+                                            .system(
+                                                .caption2,
+                                                design: .monospaced
+                                            )
+                                        )
+                                        .foregroundStyle(.secondary)
+                                        .textSelection(.enabled)
+                                } else {
+                                    Text(
+                                        "No SHA-256 digest declared by the Hub."
+                                    )
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                                }
+                            }
                         }
+                    }
+                    if artifact.id != artifacts.last?.id {
+                        Divider()
                     }
                 }
 
                 Label(
-                    artifact.expectedSHA256Coverage
-                        ? "Every file declares a Hub LFS SHA-256 digest."
-                        : "Files without a Hub SHA-256 digest will still be checked for exact size before import.",
-                    systemImage: artifact.expectedSHA256Coverage
+                    artifacts.allSatisfy(
+                        \.expectedSHA256Coverage
+                    )
+                        ? "Every file declares a Hub LFS SHA-256 digest; all files also receive bounded GGUF structure validation."
+                        : "Files without a Hub SHA-256 digest still receive exact-size and bounded GGUF structure validation before import.",
+                    systemImage: artifacts.allSatisfy(
+                        \.expectedSHA256Coverage
+                    )
                         ? "checkmark.shield"
                         : "exclamationmark.shield"
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-                downloadAction(for: artifact)
+                downloadAction(for: primary)
             }
             .padding(.top, 4)
         }
@@ -451,7 +547,10 @@ struct HuggingFaceModelsView: View {
             downloadJobControls(job)
         } else {
             Button(
-                "Download to Local Library",
+                appModel.selectedHuggingFaceCompanionArtifacts
+                    .isEmpty
+                    ? "Download to Local Library"
+                    : "Download Model and Companions",
                 systemImage: "arrow.down.circle"
             ) {
                 Task {
@@ -464,16 +563,19 @@ struct HuggingFaceModelsView: View {
                 artifact.role != .main
                     || !artifact.isComplete
                     || (
-                        appModel.selectedHuggingFaceRepository?
-                            .gated.requiresAuthentication
-                            == true
-                            || appModel
+                        (
+                            appModel
                                 .selectedHuggingFaceRepository?
-                                .isPrivate
+                                .gated.requiresAuthentication
                                 == true
+                                || appModel
+                                    .selectedHuggingFaceRepository?
+                                    .isPrivate
+                                    == true
+                        )
+                            && !appModel
+                                .isHuggingFaceTokenConfigured
                     )
-                    && !appModel
-                        .isHuggingFaceTokenConfigured
             )
             .help(
                 artifact.role == .main

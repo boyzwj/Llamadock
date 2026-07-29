@@ -22,6 +22,7 @@ public enum ModelDownloadManagerError:
         expected: String,
         actual: String
     )
+    case invalidGGUF(path: String, reason: String)
 }
 
 extension ModelDownloadManagerError: LocalizedError {
@@ -43,6 +44,8 @@ extension ModelDownloadManagerError: LocalizedError {
             "The downloaded file \(path) expected \(expected) bytes but has \(actual)."
         case .checksumMismatch(let path, let expected, let actual):
             "The downloaded file \(path) failed SHA-256 verification: expected \(expected), got \(actual)."
+        case .invalidGGUF(let path, let reason):
+            "The downloaded file \(path) is not a valid GGUF: \(reason)"
         }
     }
 }
@@ -53,6 +56,7 @@ public actor ModelDownloadManager {
     private let transport: any ModelDownloadTransporting
     private let urlResolver: any HuggingFaceFileURLResolving
     private let tokenStore: any HuggingFaceTokenStoring
+    private let metadataReader: GGUFMetadataReader
     private let fileManager: FileManager
 
     private var jobs: [UUID: ModelDownloadJob] = [:]
@@ -71,6 +75,8 @@ public actor ModelDownloadManager {
             HuggingFaceHubClient(),
         tokenStore: any HuggingFaceTokenStoring =
             KeychainHuggingFaceTokenStore(),
+        metadataReader: GGUFMetadataReader =
+            GGUFMetadataReader(),
         fileManager: FileManager = .default
     ) {
         self.directories = directories
@@ -80,6 +86,7 @@ public actor ModelDownloadManager {
         self.transport = transport
         self.urlResolver = urlResolver
         self.tokenStore = tokenStore
+        self.metadataReader = metadataReader
         self.fileManager = fileManager
     }
 
@@ -611,6 +618,22 @@ public actor ModelDownloadManager {
                         )
                 }
             }
+            do {
+                _ = try metadataReader.read(from: url)
+            } catch {
+                try? fileManager.removeItem(at: url)
+                updateFile(
+                    jobID: jobID,
+                    fileID: file.id
+                ) {
+                    $0.receivedBytes = 0
+                    $0.isVerified = false
+                }
+                throw ModelDownloadManagerError.invalidGGUF(
+                    path: file.repositoryPath,
+                    reason: diagnosticDescription(error)
+                )
+            }
             updateFile(jobID: jobID, fileID: file.id) {
                 $0.receivedBytes = file.expectedSize
                 $0.isVerified = true
@@ -681,20 +704,26 @@ public actor ModelDownloadManager {
         guard var job = jobs[id] else {
             return
         }
-        if
-            fileManager.fileExists(
-                atPath: finalDirectory(for: job).path
-            ),
-            try importedFilesAreComplete(job)
-        {
-            job.state = .completed
-            job.error = nil
-            job.files = job.files.map { file in
-                var file = file
-                file.receivedBytes = file.expectedSize
-                file.isVerified = true
-                return file
+        let finalURL = finalDirectory(for: job)
+        if fileManager.fileExists(atPath: finalURL.path) {
+            if try importedFilesAreComplete(job) {
+                job.state = .completed
+                job.error = nil
+                job.files = job.files.map { file in
+                    var file = file
+                    file.receivedBytes = file.expectedSize
+                    file.isVerified = true
+                    return file
+                }
+                jobs[id] = job
+                cleanupTransaction(id: id)
+                return
             }
+            job.state = .failed
+            job.error = """
+                The imported artifact directory is incomplete. \
+                LlamaDock will not overwrite it.
+                """
             jobs[id] = job
             cleanupTransaction(id: id)
             return
@@ -742,7 +771,9 @@ public actor ModelDownloadManager {
                 request.files.map {
                     "\($0.artifactID):\($0.repositoryPath)"
                 }
-            ).count == request.files.count
+            ).count == request.files.count,
+            Set(request.files.map(\.repositoryPath)).count
+                == request.files.count
         else {
             throw ModelDownloadManagerError.invalidRequest(
                 "A safe repository, revision, main artifact, and unique files are required."
@@ -758,6 +789,35 @@ public actor ModelDownloadManager {
                     "File paths, sizes, or checksums are invalid."
                 )
             }
+        }
+        let artifactGroups = Dictionary(
+            grouping: request.files,
+            by: \.artifactID
+        )
+        for group in artifactGroups.values {
+            guard
+                Set(group.map(\.role)).count == 1,
+                Set(group.map(\.artifactDisplayName)).count == 1
+            else {
+                throw ModelDownloadManagerError.invalidRequest(
+                    "Each artifact ID must have one role and display name."
+                )
+            }
+        }
+        let artifactIDsByRole = Dictionary(
+            grouping: artifactGroups.values,
+            by: { $0[0].role }
+        ).mapValues { groups in
+            Set(groups.compactMap(\.first?.artifactID))
+        }
+        guard
+            artifactIDsByRole[.main]?.count == 1,
+            (artifactIDsByRole[.mmproj]?.count ?? 0) <= 1,
+            (artifactIDsByRole[.draft]?.count ?? 0) <= 1
+        else {
+            throw ModelDownloadManagerError.invalidRequest(
+                "A download must contain one main artifact and at most one companion of each role."
+            )
         }
     }
 

@@ -8,7 +8,7 @@ The project follows the architecture and milestones in [DESIGN.md](DESIGN.md).
 
 ## Status
 
-Milestones 0 through 3 are complete. In addition to the external-runtime
+Milestones 0 through 4 are complete. In addition to the external-runtime
 vertical slice, LlamaDock can query and cache the official latest `llama.cpp`
 release, securely download and extract its macOS arm64 archive, validate its
 Mach-O binaries and reported build, atomically register it, activate it, and
@@ -33,15 +33,23 @@ versioned launch profiles. Typed settings are checked against the selected
 runtime's advertised flags while extra arguments remain tokenized and
 shell-free.
 
-Milestone 4 is in progress. The Models screen can already search public
-Hugging Face GGUF repositories, normalize repository URLs and `llama -hf`
-references, page through the real file tree, and group quantizations, split
-artifacts, vision projectors, and draft models. Optional Hub credentials are
-masked in the UI and stored only as a macOS Keychain generic password.
+Milestone 4 adds browsing for public and authenticated Hugging Face GGUF
+repositories. It normalizes repository URLs and `llama -hf` references, pages
+through the real file tree, and groups quantizations, split artifacts, vision
+projectors, and draft models. Optional Hub credentials are masked in the UI and
+stored only as a macOS Keychain generic password.
 Main artifacts can be queued, paused, resumed after relaunch with HTTP Range,
-cancelled, checked against exact sizes and available Hub SHA-256 digests, and
-atomically imported into the local library without overwriting existing files.
-The full core suite currently has 118 tests across 33 suites.
+cancelled, bundled with optional mmproj/draft companions, checked against exact
+sizes, available Hub SHA-256 digests, and bounded GGUF structure validation,
+then atomically imported without overwriting existing files. Completion creates
+and selects a launch Profile, including companion paths, and reconciliation
+repairs a missing Profile after an interrupted app exit.
+
+The full core suite currently has 124 tests across 35 suites. The Milestone 4
+real-delivery qualification downloaded `stories15M-q4_0.gguf` through the
+production transport, verified and imported it, generated a Profile, started
+official `llama.cpp` b10176, completed an OpenAI-compatible request, and stopped
+without leaving its port occupied.
 
 ## Requirements
 
@@ -140,6 +148,24 @@ xcrun swift test \
   --filter RealModelDownloadTransportSmokeTests
 ```
 
+The full public-Hub delivery gate is opt in because it downloads a 19 MB model
+and launches a real server:
+
+```bash
+LLAMADOCK_HF_DELIVERY_SMOKE=1 \
+LLAMADOCK_HF_DELIVERY_SERVER=/absolute/path/to/llama-server \
+LLAMADOCK_HF_DELIVERY_PORT=18082 \
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+xcrun swift test \
+  --package-path Packages/LlamadockCore \
+  --filter RealHuggingFaceDeliverySmokeTests
+```
+
+It downloads the public `ggml-org/tiny-llamas` `stories15M-q4_0.gguf`,
+validates its declared size and SHA-256 plus its GGUF structure, imports it,
+builds a Profile, waits for readiness, requests `/v1/completions`, and stops
+only the process it launched.
+
 Download state is readable versioned JSON at
 `~/Library/Application Support/Llamadock/downloads/state.json`. Partial files
 live under `downloads/jobs/<job-id>/` and are removed after successful import
@@ -164,8 +190,8 @@ Selected, Roll Back, and Copy Diagnostics controls are available in Runtimes.
 ## Current limitations
 
 - Managed runtime deletion and automatic retention pruning are not exposed yet.
-- Automatic companion selection, post-download profile creation, and final GGUF
-  structure validation are remaining Milestone 4 work.
+- Downloads use one URLSession stream per file. Configurable multi-segment Range
+  concurrency remains a post-v1 performance enhancement.
 - Runtime and model files remain in their original locations. Moving or deleting
   them makes the saved profile invalid until a replacement is selected.
 - The app currently uses a 30-second cold-probe budget because first launch of
