@@ -18,12 +18,17 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      KEYCHAIN_PATH: ${{ runner.temp }}/llamadock-signing.keychain-db
       KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
       NOTARY_PROFILE: llamadock-ci
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure ephemeral keychain path
+        run: |
+          printf 'KEYCHAIN_PATH=%s\n' \
+            "${RUNNER_TEMP}/llamadock-signing.keychain-db" \
+            >>"${GITHUB_ENV}"
 
       - name: Verify tag and release contract
         run: |
