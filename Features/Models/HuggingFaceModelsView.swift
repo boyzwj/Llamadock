@@ -68,6 +68,16 @@ struct HuggingFaceModelsView: View {
                 .foregroundStyle(.orange)
                 .textSelection(.enabled)
             }
+
+            if let error = appModel.modelDownloadError {
+                Label(
+                    error,
+                    systemImage: "arrow.down.circle.dotted"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .textSelection(.enabled)
+            }
         }
         .padding(14)
     }
@@ -158,6 +168,13 @@ struct HuggingFaceModelsView: View {
 
                     if let catalog = appModel.huggingFaceCatalog {
                         artifactCatalog(catalog)
+                    }
+
+                    if
+                        !appModel.modelDownloadSnapshot.jobs
+                            .isEmpty
+                    {
+                        downloadQueue
                     }
                 }
                 .padding(22)
@@ -407,13 +424,168 @@ struct HuggingFaceModelsView: View {
                 }
 
                 Label(
-                    "Downloads remain disabled until the persistent queue can resume and verify every file in this manifest.",
-                    systemImage: "checklist"
+                    artifact.expectedSHA256Coverage
+                        ? "Every file declares a Hub LFS SHA-256 digest."
+                        : "Files without a Hub SHA-256 digest will still be checked for exact size before import.",
+                    systemImage: artifact.expectedSHA256Coverage
+                        ? "checkmark.shield"
+                        : "exclamationmark.shield"
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+                downloadAction(for: artifact)
             }
             .padding(.top, 4)
+        }
+    }
+
+    @ViewBuilder
+    private func downloadAction(
+        for artifact: HuggingFaceGGUFArtifact
+    ) -> some View {
+        if
+            let job = appModel
+                .selectedHuggingFaceArtifactDownloadJob
+        {
+            downloadJobControls(job)
+        } else {
+            Button(
+                "Download to Local Library",
+                systemImage: "arrow.down.circle"
+            ) {
+                Task {
+                    await appModel
+                        .downloadSelectedHuggingFaceArtifact()
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(
+                artifact.role != .main
+                    || !artifact.isComplete
+                    || (
+                        appModel.selectedHuggingFaceRepository?
+                            .gated.requiresAuthentication
+                            == true
+                            || appModel
+                                .selectedHuggingFaceRepository?
+                                .isPrivate
+                                == true
+                    )
+                    && !appModel
+                        .isHuggingFaceTokenConfigured
+            )
+            .help(
+                artifact.role == .main
+                    ? "Download, verify, and import this artifact without overwriting existing files."
+                    : "Choose a main artifact. Companion selection is managed with its main model."
+            )
+        }
+    }
+
+    private var downloadQueue: some View {
+        GroupBox("Download Queue") {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(
+                    appModel.modelDownloadSnapshot.jobs.reversed()
+                ) { job in
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(job.displayName)
+                                    .font(.subheadline.bold())
+                                Text(job.repositoryID)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(job.state.title)
+                                .font(.caption.bold())
+                                .foregroundStyle(
+                                    job.state.tint
+                                )
+                        }
+
+                        downloadJobControls(job)
+                    }
+                    .padding(10)
+                    .background(
+                        Color.secondary.opacity(0.06),
+                        in: RoundedRectangle(cornerRadius: 9)
+                    )
+                }
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    private func downloadJobControls(
+        _ job: ModelDownloadJob
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ProgressView(value: job.progress) {
+                Text(
+                    "\(byteCount(job.receivedBytes)) of \(byteCount(job.expectedBytes))"
+                )
+                .font(.caption)
+            }
+
+            if let error = job.error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .textSelection(.enabled)
+            }
+
+            HStack {
+                if [
+                    ModelDownloadState.queued,
+                    .resolving,
+                    .downloading,
+                ].contains(job.state) {
+                    Button("Pause", systemImage: "pause.fill") {
+                        Task {
+                            await appModel.pauseModelDownload(
+                                id: job.id
+                            )
+                        }
+                    }
+                }
+
+                if [.paused, .failed].contains(job.state) {
+                    Button("Resume", systemImage: "play.fill") {
+                        Task {
+                            await appModel.resumeModelDownload(
+                                id: job.id
+                            )
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                if !job.state.isTerminal {
+                    Button(
+                        "Cancel",
+                        systemImage: "xmark",
+                        role: .destructive
+                    ) {
+                        Task {
+                            await appModel.cancelModelDownload(
+                                id: job.id
+                            )
+                        }
+                    }
+                }
+
+                if job.state == .completed {
+                    Label(
+                        "Imported into Local Library",
+                        systemImage: "checkmark.circle.fill"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                }
+            }
         }
     }
 
@@ -493,6 +665,57 @@ private extension HuggingFaceGGUFRole {
             "eye"
         case .draft:
             "hare"
+        }
+    }
+}
+
+private extension HuggingFaceGGUFArtifact {
+    var expectedSHA256Coverage: Bool {
+        files.allSatisfy {
+            $0.repositoryFile.expectedSHA256 != nil
+        }
+    }
+}
+
+private extension ModelDownloadState {
+    var title: String {
+        switch self {
+        case .queued:
+            "Queued"
+        case .resolving:
+            "Resolving"
+        case .downloading:
+            "Downloading"
+        case .paused:
+            "Paused"
+        case .verifying:
+            "Verifying"
+        case .importing:
+            "Importing"
+        case .completed:
+            "Completed"
+        case .failed:
+            "Failed"
+        case .cancelled:
+            "Cancelled"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .completed:
+            .green
+        case .failed:
+            .red
+        case .paused, .cancelled:
+            .orange
+        case
+            .queued,
+            .resolving,
+            .downloading,
+            .verifying,
+            .importing:
+            .accentColor
         }
     }
 }

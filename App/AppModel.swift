@@ -32,6 +32,8 @@ final class AppModel {
     var huggingFaceError: String?
     var isHuggingFaceTokenConfigured = false
     var huggingFaceCredentialError: String?
+    var modelDownloadSnapshot = ModelDownloadSnapshot()
+    var modelDownloadError: String?
     var profiles: [LaunchProfile] = []
     var selectedProfileID: UUID?
     var profile: LaunchProfile? {
@@ -85,12 +87,15 @@ final class AppModel {
     private let modelScanner: LocalModelScanner
     private let huggingFaceClient: any HuggingFaceHubServing
     private let huggingFaceTokenStore: any HuggingFaceTokenStoring
+    private let modelDownloadManager: ModelDownloadManager
     private let serverController: ServerProcessController
     private let userDefaults: UserDefaults
     private var didBootstrap = false
     private var serverMonitorTask: Task<Void, Never>?
     private var runtimeInstallMonitorTask: Task<Void, Never>?
+    private var modelDownloadMonitorTask: Task<Void, Never>?
     private var serverModelSecurityScopes: [URL] = []
+    private var observedCompletedDownloadIDs: Set<UUID> = []
 
     init(
         runtimeDiscovery: RuntimeCandidateDiscovery = RuntimeCandidateDiscovery(),
@@ -113,7 +118,8 @@ final class AppModel {
         huggingFaceClient: (any HuggingFaceHubServing)? = nil,
         huggingFaceTokenStore: (
             any HuggingFaceTokenStoring
-        )? = nil
+        )? = nil,
+        modelDownloadManager: ModelDownloadManager? = nil
     ) {
         self.runtimeDiscovery = runtimeDiscovery
         self.runtimeProbe = runtimeProbe
@@ -143,8 +149,14 @@ final class AppModel {
         self.modelScanner = modelScanner
         self.huggingFaceClient = huggingFaceClient
             ?? HuggingFaceHubClient()
-        self.huggingFaceTokenStore = huggingFaceTokenStore
+        let tokenStore = huggingFaceTokenStore
             ?? KeychainHuggingFaceTokenStore()
+        self.huggingFaceTokenStore = tokenStore
+        self.modelDownloadManager = modelDownloadManager
+            ?? ModelDownloadManager(
+                directories: directories,
+                tokenStore: tokenStore
+            )
 
         let registry: any ManagedRuntimeRegistering
         if let managedRuntimeRegistry {
@@ -197,6 +209,22 @@ final class AppModel {
         defer { isBootstrapping = false }
 
         refreshHuggingFaceTokenState()
+        do {
+            try await modelDownloadManager.restore()
+            modelDownloadSnapshot = await modelDownloadManager
+                .snapshot()
+            observedCompletedDownloadIDs = Set(
+                modelDownloadSnapshot.jobs.compactMap {
+                    $0.state == .completed ? $0.id : nil
+                }
+            )
+            beginModelDownloadMonitor()
+        } catch {
+            modelDownloadError = """
+                Could not restore model downloads: \
+                \(error.localizedDescription)
+                """
+        }
         await refreshRuntimes()
 
         do {
@@ -759,6 +787,75 @@ final class AppModel {
         }
     }
 
+    func downloadSelectedHuggingFaceArtifact() async {
+        guard
+            let reference = huggingFaceReference,
+            let artifact = selectedHuggingFaceArtifact,
+            artifact.role == .main,
+            artifact.isComplete
+        else {
+            modelDownloadError = """
+                Choose a complete main GGUF artifact to download.
+                """
+            return
+        }
+        modelDownloadError = nil
+        do {
+            let request = ModelDownloadRequest(
+                reference: reference,
+                displayName: artifact.displayName,
+                quantization: artifact.quantization,
+                files: artifact.files.map { file in
+                    ModelDownloadRequestFile(
+                        artifactID: artifact.id,
+                        artifactDisplayName:
+                            artifact.displayName,
+                        role: artifact.role,
+                        repositoryPath:
+                            file.repositoryFile.path,
+                        expectedSize:
+                            file.repositoryFile.size,
+                        expectedSHA256:
+                            file.repositoryFile
+                                .expectedSHA256
+                    )
+                }
+            )
+            _ = try await modelDownloadManager.enqueue(
+                request
+            )
+            modelDownloadSnapshot = await modelDownloadManager
+                .snapshot()
+            beginModelDownloadMonitor()
+        } catch {
+            modelDownloadError = error.localizedDescription
+        }
+    }
+
+    func pauseModelDownload(
+        id: UUID
+    ) async {
+        await performModelDownloadAction {
+            try await modelDownloadManager.pause(id: id)
+        }
+    }
+
+    func resumeModelDownload(
+        id: UUID
+    ) async {
+        await performModelDownloadAction {
+            try await modelDownloadManager.resume(id: id)
+        }
+    }
+
+    func cancelModelDownload(
+        id: UUID
+    ) async {
+        await performModelDownloadAction {
+            try await modelDownloadManager.cancel(id: id)
+        }
+    }
+
     func createProfile(
         for model: LocalModelFile
     ) {
@@ -1021,6 +1118,9 @@ final class AppModel {
     }
 
     func shutdown() async {
+        await modelDownloadManager.suspendForTermination()
+        modelDownloadMonitorTask?.cancel()
+        modelDownloadMonitorTask = nil
         await serverController.stop()
         endServerModelSecurityScope()
         serverMonitorTask?.cancel()
@@ -1061,6 +1161,23 @@ final class AppModel {
         }
         return huggingFaceCatalog?.artifacts.first {
             $0.id == selectedHuggingFaceArtifactID
+        }
+    }
+
+    var selectedHuggingFaceArtifactDownloadJob: ModelDownloadJob? {
+        guard
+            let reference = huggingFaceReference,
+            let artifact = selectedHuggingFaceArtifact
+        else {
+            return nil
+        }
+        return modelDownloadSnapshot.jobs.last {
+            $0.repositoryID == reference.repositoryID
+                && $0.revision == reference.revision
+                && $0.files.contains {
+                    $0.artifactID == artifact.id
+                }
+                && $0.state != .cancelled
         }
     }
 
@@ -1119,6 +1236,55 @@ final class AppModel {
             )
             || input.contains("-hf")
             || input.contains("--hf-repo")
+    }
+
+    private func performModelDownloadAction(
+        _ action: () async throws -> Void
+    ) async {
+        modelDownloadError = nil
+        do {
+            try await action()
+            modelDownloadSnapshot = await modelDownloadManager
+                .snapshot()
+            beginModelDownloadMonitor()
+        } catch {
+            modelDownloadError = error.localizedDescription
+        }
+    }
+
+    private func beginModelDownloadMonitor() {
+        guard modelDownloadMonitorTask == nil else {
+            return
+        }
+        modelDownloadMonitorTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else {
+                    return
+                }
+                let snapshot = await self.modelDownloadManager
+                    .snapshot()
+                self.modelDownloadSnapshot = snapshot
+
+                let completed = Set(
+                    snapshot.jobs.compactMap {
+                        $0.state == .completed ? $0.id : nil
+                    }
+                )
+                let newlyCompleted = completed.subtracting(
+                    self.observedCompletedDownloadIDs
+                )
+                self.observedCompletedDownloadIDs = completed
+                if !newlyCompleted.isEmpty {
+                    await self.refreshModels()
+                }
+
+                try? await Task.sleep(
+                    nanoseconds: snapshot.activeJobID == nil
+                        ? 1_000_000_000
+                        : 250_000_000
+                )
+            }
+        }
     }
 
     var canChangeManagedRuntime: Bool {

@@ -38,9 +38,10 @@ Hugging Face GGUF repositories, normalize repository URLs and `llama -hf`
 references, page through the real file tree, and group quantizations, split
 artifacts, vision projectors, and draft models. Optional Hub credentials are
 masked in the UI and stored only as a macOS Keychain generic password.
-Downloads remain deliberately disabled until their persistent resume and
-verification path is complete. The full core suite currently has 107 tests
-across 30 suites.
+Main artifacts can be queued, paused, resumed after relaunch with HTTP Range,
+cancelled, checked against exact sizes and available Hub SHA-256 digests, and
+atomically imported into the local library without overwriting existing files.
+The full core suite currently has 118 tests across 33 suites.
 
 ## Requirements
 
@@ -124,6 +125,27 @@ xcrun swift test \
   --filter RealHuggingFaceKeychainSmokeTests
 ```
 
+The production download transport can be checked against a deterministic local
+HTTP fixture. It covers a valid `206 Content-Range`, a server that ignores
+Range and returns `200`, and a mismatched Content-Range that must be rejected
+before any bytes are appended:
+
+```bash
+python3 Scripts/range-http-fixture.py --port 18081
+
+LLAMADOCK_RANGE_SMOKE_URL=http://127.0.0.1:18081/model.gguf \
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+xcrun swift test \
+  --package-path Packages/LlamadockCore \
+  --filter RealModelDownloadTransportSmokeTests
+```
+
+Download state is readable versioned JSON at
+`~/Library/Application Support/Llamadock/downloads/state.json`. Partial files
+live under `downloads/jobs/<job-id>/` and are removed after successful import
+or cancellation. Completed artifacts are stored under
+`models/huggingface/<owner>/<repository>/<revision>/`.
+
 ## Managed runtime storage
 
 LlamaDock owns a transparent runtime directory under
@@ -142,7 +164,8 @@ Selected, Roll Back, and Copy Diagnostics controls are available in Runtimes.
 ## Current limitations
 
 - Managed runtime deletion and automatic retention pruning are not exposed yet.
-  Resumable Hugging Face model downloads are Milestone 4 work in progress.
+- Automatic companion selection, post-download profile creation, and final GGUF
+  structure validation are remaining Milestone 4 work.
 - Runtime and model files remain in their original locations. Moving or deleting
   them makes the saved profile invalid until a replacement is selected.
 - The app currently uses a 30-second cold-probe budget because first launch of

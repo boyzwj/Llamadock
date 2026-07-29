@@ -64,8 +64,16 @@ public protocol HuggingFaceHubServing: Sendable {
     ) async throws -> [HuggingFaceRepositoryFile]
 }
 
+public protocol HuggingFaceFileURLResolving: Sendable {
+    func resolveURL(
+        reference: HuggingFaceRepositoryReference,
+        filePath: String
+    ) throws -> URL
+}
+
 public struct HuggingFaceHubClient:
     HuggingFaceHubServing,
+    HuggingFaceFileURLResolving,
     Sendable
 {
     public static let endpoint = URL(
