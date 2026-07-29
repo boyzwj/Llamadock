@@ -21,6 +21,7 @@ struct LlamadockApp: App {
 
         Settings {
             SettingsView()
+                .environment(appModel)
         }
     }
 }

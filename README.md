@@ -8,7 +8,7 @@ The project follows the architecture and milestones in [DESIGN.md](DESIGN.md).
 
 ## Status
 
-Milestones 0 through 2 are complete. In addition to the external-runtime
+Milestones 0 through 4 are complete. In addition to the external-runtime
 vertical slice, LlamaDock can query and cache the official latest `llama.cpp`
 release, securely download and extract its macOS arm64 archive, validate its
 Mach-O binaries and reported build, atomically register it, activate it, and
@@ -24,8 +24,32 @@ official GitHub release → install and validate `b10176` → persist an active
 managed registry → relaunch from the validated release cache → start the
 managed runtime → complete an OpenAI-compatible request → stop and release the
 socket. Simulated verification, registration, and activation failures cover
-the non-destructive rollback boundaries. The full core suite now has 73 tests
-across 20 suites.
+the non-destructive rollback boundaries.
+
+The Milestone 3 model library recursively scans the app-owned model directory
+and bookmarked external folders, reads bounded GGUF v2/v3 metadata without
+loading tensor data, keeps invalid files visible, and restores multiple
+versioned launch profiles. Typed settings are checked against the selected
+runtime's advertised flags while extra arguments remain tokenized and
+shell-free.
+
+Milestone 4 adds browsing for public and authenticated Hugging Face GGUF
+repositories. It normalizes repository URLs and `llama -hf` references, pages
+through the real file tree, and groups quantizations, split artifacts, vision
+projectors, and draft models. Optional Hub credentials are masked in the UI and
+stored only as a macOS Keychain generic password.
+Main artifacts can be queued, paused, resumed after relaunch with HTTP Range,
+cancelled, bundled with optional mmproj/draft companions, checked against exact
+sizes, available Hub SHA-256 digests, and bounded GGUF structure validation,
+then atomically imported without overwriting existing files. Completion creates
+and selects a launch Profile, including companion paths, and reconciliation
+repairs a missing Profile after an interrupted app exit.
+
+The full core suite currently has 124 tests across 35 suites. The Milestone 4
+real-delivery qualification downloaded `stories15M-q4_0.gguf` through the
+production transport, verified and imported it, generated a Profile, started
+official `llama.cpp` b10176, completed an OpenAI-compatible request, and stopped
+without leaving its port occupied.
 
 ## Requirements
 
@@ -82,6 +106,72 @@ The recorded Milestone 1 qualification used:
   process shutdown, persistence after relaunch, and occupied-port rejection
   before process launch
 
+## Real Hugging Face smoke test
+
+Public Hub search and tree parsing can be checked without a token or model
+download:
+
+```bash
+LLAMADOCK_HF_SMOKE_QUERY=stories15M \
+LLAMADOCK_HF_SMOKE_REPOSITORY=mradermacher/llama2.c-stories15M-GGUF \
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+xcrun swift test \
+  --package-path Packages/LlamadockCore \
+  --filter RealHuggingFaceHubSmokeTests
+```
+
+The test is skipped unless both `LLAMADOCK_HF_SMOKE_*` variables are present.
+
+The Keychain adapter also has an opt-in smoke that writes, replaces, reads, and
+removes an isolated synthetic item:
+
+```bash
+LLAMADOCK_KEYCHAIN_SMOKE=1 \
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+xcrun swift test \
+  --package-path Packages/LlamadockCore \
+  --filter RealHuggingFaceKeychainSmokeTests
+```
+
+The production download transport can be checked against a deterministic local
+HTTP fixture. It covers a valid `206 Content-Range`, a server that ignores
+Range and returns `200`, and a mismatched Content-Range that must be rejected
+before any bytes are appended:
+
+```bash
+python3 Scripts/range-http-fixture.py --port 18081
+
+LLAMADOCK_RANGE_SMOKE_URL=http://127.0.0.1:18081/model.gguf \
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+xcrun swift test \
+  --package-path Packages/LlamadockCore \
+  --filter RealModelDownloadTransportSmokeTests
+```
+
+The full public-Hub delivery gate is opt in because it downloads a 19 MB model
+and launches a real server:
+
+```bash
+LLAMADOCK_HF_DELIVERY_SMOKE=1 \
+LLAMADOCK_HF_DELIVERY_SERVER=/absolute/path/to/llama-server \
+LLAMADOCK_HF_DELIVERY_PORT=18082 \
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+xcrun swift test \
+  --package-path Packages/LlamadockCore \
+  --filter RealHuggingFaceDeliverySmokeTests
+```
+
+It downloads the public `ggml-org/tiny-llamas` `stories15M-q4_0.gguf`,
+validates its declared size and SHA-256 plus its GGUF structure, imports it,
+builds a Profile, waits for readiness, requests `/v1/completions`, and stops
+only the process it launched.
+
+Download state is readable versioned JSON at
+`~/Library/Application Support/Llamadock/downloads/state.json`. Partial files
+live under `downloads/jobs/<job-id>/` and are removed after successful import
+or cancellation. Completed artifacts are stored under
+`models/huggingface/<owner>/<repository>/<revision>/`.
+
 ## Managed runtime storage
 
 LlamaDock owns a transparent runtime directory under
@@ -100,8 +190,8 @@ Selected, Roll Back, and Copy Diagnostics controls are available in Runtimes.
 ## Current limitations
 
 - Managed runtime deletion and automatic retention pruning are not exposed yet.
-  Resumable model downloads and the full model library arrive in later
-  milestones.
+- Downloads use one URLSession stream per file. Configurable multi-segment Range
+  concurrency remains a post-v1 performance enhancement.
 - Runtime and model files remain in their original locations. Moving or deleting
   them makes the saved profile invalid until a replacement is selected.
 - The app currently uses a 30-second cold-probe budget because first launch of

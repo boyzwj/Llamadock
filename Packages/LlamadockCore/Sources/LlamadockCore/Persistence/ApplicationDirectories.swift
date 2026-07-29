@@ -35,6 +35,20 @@ public struct ApplicationDirectories: Sendable {
         root.appending(path: "downloads", directoryHint: .isDirectory)
     }
 
+    public var downloadState: URL {
+        downloads.appending(
+            path: "state.json",
+            directoryHint: .notDirectory
+        )
+    }
+
+    public var downloadJobs: URL {
+        downloads.appending(
+            path: "jobs",
+            directoryHint: .isDirectory
+        )
+    }
+
     public var logs: URL {
         root.appending(path: "logs", directoryHint: .isDirectory)
     }

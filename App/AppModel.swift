@@ -22,6 +22,19 @@ final class AppModel {
     var modelDirectoryIssues: [ModelDirectoryResolutionIssue] = []
     var modelScanSnapshot: LocalModelScanSnapshot?
     var selectedLibraryModelID: String?
+    var huggingFaceRepositories: [HuggingFaceRepository] = []
+    var selectedHuggingFaceRepositoryID: String?
+    var huggingFaceReference: HuggingFaceRepositoryReference?
+    var huggingFaceCatalog: HuggingFaceRepositoryCatalog?
+    var selectedHuggingFaceArtifactID: String?
+    var selectedHuggingFaceCompanionArtifactIDs: Set<String> = []
+    var isSearchingHuggingFace = false
+    var isLoadingHuggingFaceRepository = false
+    var huggingFaceError: String?
+    var isHuggingFaceTokenConfigured = false
+    var huggingFaceCredentialError: String?
+    var modelDownloadSnapshot = ModelDownloadSnapshot()
+    var modelDownloadError: String?
     var profiles: [LaunchProfile] = []
     var selectedProfileID: UUID?
     var profile: LaunchProfile? {
@@ -73,12 +86,19 @@ final class AppModel {
     private let applicationDirectories: ApplicationDirectories
     private let modelDirectoryStore: JSONModelDirectoryStore
     private let modelScanner: LocalModelScanner
+    private let huggingFaceClient: any HuggingFaceHubServing
+    private let huggingFaceTokenStore: any HuggingFaceTokenStoring
+    private let modelDownloadManager: ModelDownloadManager
+    private let modelDownloadProfileFactory:
+        ModelDownloadProfileFactory
     private let serverController: ServerProcessController
     private let userDefaults: UserDefaults
     private var didBootstrap = false
     private var serverMonitorTask: Task<Void, Never>?
     private var runtimeInstallMonitorTask: Task<Void, Never>?
+    private var modelDownloadMonitorTask: Task<Void, Never>?
     private var serverModelSecurityScopes: [URL] = []
+    private var observedCompletedDownloadIDs: Set<UUID> = []
 
     init(
         runtimeDiscovery: RuntimeCandidateDiscovery = RuntimeCandidateDiscovery(),
@@ -97,7 +117,15 @@ final class AppModel {
         )? = nil,
         managedRuntimeInstaller: ManagedRuntimeInstaller? = nil,
         modelDirectoryStore: JSONModelDirectoryStore? = nil,
-        modelScanner: LocalModelScanner = LocalModelScanner()
+        modelScanner: LocalModelScanner = LocalModelScanner(),
+        huggingFaceClient: (any HuggingFaceHubServing)? = nil,
+        huggingFaceTokenStore: (
+            any HuggingFaceTokenStoring
+        )? = nil,
+        modelDownloadManager: ModelDownloadManager? = nil,
+        modelDownloadProfileFactory:
+            ModelDownloadProfileFactory =
+                ModelDownloadProfileFactory()
     ) {
         self.runtimeDiscovery = runtimeDiscovery
         self.runtimeProbe = runtimeProbe
@@ -125,6 +153,18 @@ final class AppModel {
                 fileURL: directories.settings
             )
         self.modelScanner = modelScanner
+        self.huggingFaceClient = huggingFaceClient
+            ?? HuggingFaceHubClient()
+        let tokenStore = huggingFaceTokenStore
+            ?? KeychainHuggingFaceTokenStore()
+        self.huggingFaceTokenStore = tokenStore
+        self.modelDownloadManager = modelDownloadManager
+            ?? ModelDownloadManager(
+                directories: directories,
+                tokenStore: tokenStore
+            )
+        self.modelDownloadProfileFactory =
+            modelDownloadProfileFactory
 
         let registry: any ManagedRuntimeRegistering
         if let managedRuntimeRegistry {
@@ -176,6 +216,23 @@ final class AppModel {
         isBootstrapping = true
         defer { isBootstrapping = false }
 
+        refreshHuggingFaceTokenState()
+        do {
+            try await modelDownloadManager.restore()
+            modelDownloadSnapshot = await modelDownloadManager
+                .snapshot()
+            observedCompletedDownloadIDs = Set(
+                modelDownloadSnapshot.jobs.compactMap {
+                    $0.state == .completed ? $0.id : nil
+                }
+            )
+            beginModelDownloadMonitor()
+        } catch {
+            modelDownloadError = """
+                Could not restore model downloads: \
+                \(error.localizedDescription)
+                """
+        }
         await refreshRuntimes()
 
         do {
@@ -201,6 +258,9 @@ final class AppModel {
                     selectedRuntimeID = runtimeID
                 }
             }
+            await reconcileCompletedDownloadProfiles(
+                selectNewProfile: selectedProfileID == nil
+            )
         } catch {
             visibleError = "Could not restore profiles: \(error.localizedDescription)"
         }
@@ -596,6 +656,275 @@ final class AppModel {
         }
     }
 
+    func searchHuggingFace(
+        _ input: String
+    ) async {
+        guard !isSearchingHuggingFace else {
+            return
+        }
+        isSearchingHuggingFace = true
+        huggingFaceError = nil
+        defer { isSearchingHuggingFace = false }
+
+        do {
+            let query = input.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            let reference: HuggingFaceRepositoryReference?
+            if isHuggingFaceReference(query) {
+                reference = try HuggingFaceReferenceParser().parse(
+                    query
+                )
+            } else {
+                reference = nil
+            }
+
+            let token = try huggingFaceTokenStore.token()
+            let repositories = try await huggingFaceClient.searchModels(
+                query: reference?.repositoryID ?? query,
+                limit: 50,
+                token: token
+            )
+            if let reference {
+                let exactRepository = repositories.first {
+                    $0.id.caseInsensitiveCompare(
+                        reference.repositoryID
+                    ) == .orderedSame
+                } ?? HuggingFaceRepository(
+                    id: reference.repositoryID,
+                    downloads: 0,
+                    likes: 0,
+                    lastModified: nil,
+                    gated: .none,
+                    isPrivate: false,
+                    pipelineTag: nil,
+                    tags: []
+                )
+                huggingFaceRepositories = [
+                    exactRepository,
+                ] + repositories.filter {
+                    $0.id.caseInsensitiveCompare(
+                        reference.repositoryID
+                    ) != .orderedSame
+                }
+                selectedHuggingFaceRepositoryID = exactRepository.id
+                try await loadHuggingFaceCatalog(
+                    reference: reference,
+                    token: token
+                )
+            } else {
+                huggingFaceRepositories = repositories
+                selectedHuggingFaceRepositoryID = repositories.first?.id
+                if let repository = repositories.first {
+                    try await loadHuggingFaceCatalog(
+                        reference: HuggingFaceRepositoryReference(
+                            repositoryID: repository.id
+                        ),
+                        token: token
+                    )
+                } else {
+                    huggingFaceReference = nil
+                    huggingFaceCatalog = nil
+                    selectedHuggingFaceArtifactID = nil
+                }
+            }
+        } catch {
+            huggingFaceError = error.localizedDescription
+        }
+    }
+
+    func selectHuggingFaceRepository(
+        _ id: String?
+    ) async {
+        guard
+            !isLoadingHuggingFaceRepository,
+            let id
+        else {
+            return
+        }
+        selectedHuggingFaceRepositoryID = id
+        huggingFaceError = nil
+        do {
+            try await loadHuggingFaceCatalog(
+                reference: HuggingFaceRepositoryReference(
+                    repositoryID: id
+                ),
+                token: try huggingFaceTokenStore.token()
+            )
+        } catch {
+            huggingFaceError = error.localizedDescription
+        }
+    }
+
+    func selectHuggingFaceArtifact(
+        _ id: String?
+    ) {
+        guard
+            let id,
+            huggingFaceCatalog?.artifacts.first(
+                where: {
+                    $0.id == id
+                        && $0.role == .main
+                }
+            ) != nil
+        else {
+            selectedHuggingFaceArtifactID = nil
+            return
+        }
+        selectedHuggingFaceArtifactID = id
+    }
+
+    func setHuggingFaceCompanionArtifact(
+        _ id: String,
+        selected: Bool
+    ) {
+        guard
+            let artifact = huggingFaceCatalog?.artifacts.first(
+                where: {
+                    $0.id == id
+                        && $0.role != .main
+                        && $0.isComplete
+                }
+            )
+        else {
+            return
+        }
+        if selected {
+            let sameRoleIDs = Set(
+                huggingFaceCatalog?.artifacts.compactMap {
+                    $0.role == artifact.role ? $0.id : nil
+                } ?? []
+            )
+            selectedHuggingFaceCompanionArtifactIDs
+                .subtract(sameRoleIDs)
+            selectedHuggingFaceCompanionArtifactIDs.insert(id)
+        } else {
+            selectedHuggingFaceCompanionArtifactIDs.remove(id)
+        }
+    }
+
+    func refreshHuggingFaceTokenState() {
+        do {
+            isHuggingFaceTokenConfigured = try huggingFaceTokenStore
+                .token() != nil
+            huggingFaceCredentialError = nil
+        } catch {
+            isHuggingFaceTokenConfigured = false
+            huggingFaceCredentialError = error.localizedDescription
+        }
+    }
+
+    @discardableResult
+    func saveHuggingFaceToken(
+        _ token: String
+    ) -> Bool {
+        do {
+            try huggingFaceTokenStore.saveToken(token)
+            isHuggingFaceTokenConfigured = true
+            huggingFaceCredentialError = nil
+            return true
+        } catch {
+            huggingFaceCredentialError = error.localizedDescription
+            return false
+        }
+    }
+
+    func deleteHuggingFaceToken() {
+        do {
+            try huggingFaceTokenStore.deleteToken()
+            isHuggingFaceTokenConfigured = false
+            huggingFaceCredentialError = nil
+        } catch {
+            huggingFaceCredentialError = error.localizedDescription
+        }
+    }
+
+    func downloadSelectedHuggingFaceArtifact() async {
+        guard
+            let reference = huggingFaceReference,
+            let artifact = selectedHuggingFaceArtifact,
+            artifact.role == .main,
+            artifact.isComplete
+        else {
+            modelDownloadError = """
+                Choose a complete main GGUF artifact to download.
+                """
+            return
+        }
+        if
+            let repository = selectedHuggingFaceRepository,
+            (
+                repository.gated.requiresAuthentication
+                    || repository.isPrivate
+            ),
+            !isHuggingFaceTokenConfigured
+        {
+            modelDownloadError = """
+                Add a Hugging Face token in Settings before downloading \
+                this restricted repository.
+                """
+            return
+        }
+        modelDownloadError = nil
+        do {
+            let artifacts = selectedHuggingFaceDownloadArtifacts
+            let request = ModelDownloadRequest(
+                reference: reference,
+                displayName: artifact.displayName,
+                quantization: artifact.quantization,
+                files: artifacts.flatMap { selectedArtifact in
+                    selectedArtifact.files.map { file in
+                        ModelDownloadRequestFile(
+                            artifactID: selectedArtifact.id,
+                            artifactDisplayName:
+                                selectedArtifact.displayName,
+                            role: selectedArtifact.role,
+                            repositoryPath:
+                                file.repositoryFile.path,
+                            expectedSize:
+                                file.repositoryFile.size,
+                            expectedSHA256:
+                                file.repositoryFile
+                                    .expectedSHA256
+                        )
+                    }
+                }
+            )
+            _ = try await modelDownloadManager.enqueue(
+                request
+            )
+            modelDownloadSnapshot = await modelDownloadManager
+                .snapshot()
+            beginModelDownloadMonitor()
+        } catch {
+            modelDownloadError = error.localizedDescription
+        }
+    }
+
+    func pauseModelDownload(
+        id: UUID
+    ) async {
+        await performModelDownloadAction {
+            try await modelDownloadManager.pause(id: id)
+        }
+    }
+
+    func resumeModelDownload(
+        id: UUID
+    ) async {
+        await performModelDownloadAction {
+            try await modelDownloadManager.resume(id: id)
+        }
+    }
+
+    func cancelModelDownload(
+        id: UUID
+    ) async {
+        await performModelDownloadAction {
+            try await modelDownloadManager.cancel(id: id)
+        }
+    }
+
     func createProfile(
         for model: LocalModelFile
     ) {
@@ -858,6 +1187,9 @@ final class AppModel {
     }
 
     func shutdown() async {
+        await modelDownloadManager.suspendForTermination()
+        modelDownloadMonitorTask?.cancel()
+        modelDownloadMonitorTask = nil
         await serverController.stop()
         endServerModelSecurityScope()
         serverMonitorTask?.cancel()
@@ -883,6 +1215,73 @@ final class AppModel {
         modelScanSnapshot?.models ?? []
     }
 
+    var selectedHuggingFaceRepository: HuggingFaceRepository? {
+        guard let selectedHuggingFaceRepositoryID else {
+            return nil
+        }
+        return huggingFaceRepositories.first {
+            $0.id == selectedHuggingFaceRepositoryID
+        }
+    }
+
+    var selectedHuggingFaceArtifact: HuggingFaceGGUFArtifact? {
+        guard let selectedHuggingFaceArtifactID else {
+            return nil
+        }
+        return huggingFaceCatalog?.artifacts.first {
+            $0.id == selectedHuggingFaceArtifactID
+        }
+    }
+
+    var selectedHuggingFaceCompanionArtifacts:
+        [HuggingFaceGGUFArtifact]
+    {
+        (huggingFaceCatalog?.artifacts ?? [])
+            .filter {
+                selectedHuggingFaceCompanionArtifactIDs
+                    .contains($0.id)
+            }
+            .sorted {
+                if $0.role == $1.role {
+                    return $0.displayName
+                        .localizedStandardCompare(
+                            $1.displayName
+                        ) == .orderedAscending
+                }
+                return $0.role == .mmproj
+            }
+    }
+
+    var selectedHuggingFaceDownloadArtifacts:
+        [HuggingFaceGGUFArtifact]
+    {
+        guard let selectedHuggingFaceArtifact else {
+            return []
+        }
+        return [selectedHuggingFaceArtifact]
+            + selectedHuggingFaceCompanionArtifacts
+    }
+
+    var selectedHuggingFaceArtifactDownloadJob: ModelDownloadJob? {
+        guard
+            let reference = huggingFaceReference,
+            let artifact = selectedHuggingFaceArtifact
+        else {
+            return nil
+        }
+        let selectedArtifactIDs = Set(
+            selectedHuggingFaceDownloadArtifacts.map(\.id)
+        )
+        return modelDownloadSnapshot.jobs.last {
+            $0.repositoryID == reference.repositoryID
+                && $0.revision == reference.revision
+                && Set($0.files.map(\.artifactID))
+                    == selectedArtifactIDs
+                && selectedArtifactIDs.contains(artifact.id)
+                && $0.state != .cancelled
+        }
+    }
+
     var localModelByteCount: UInt64 {
         localModels.reduce(0) { partial, model in
             let sum = partial.addingReportingOverflow(
@@ -894,6 +1293,193 @@ final class AppModel {
 
     var ownedModelsDirectoryURL: URL {
         applicationDirectories.models
+    }
+
+    private func loadHuggingFaceCatalog(
+        reference: HuggingFaceRepositoryReference,
+        token: String?
+    ) async throws {
+        isLoadingHuggingFaceRepository = true
+        huggingFaceReference = reference
+        huggingFaceCatalog = nil
+        selectedHuggingFaceArtifactID = nil
+        selectedHuggingFaceCompanionArtifactIDs = []
+        defer { isLoadingHuggingFaceRepository = false }
+
+        let files = try await huggingFaceClient.repositoryFiles(
+            reference: reference,
+            token: token
+        )
+        let catalog = HuggingFaceFileCatalogBuilder().makeCatalog(
+            files: files
+        )
+        huggingFaceCatalog = catalog
+        let preferredQuantization = reference.quantization?
+            .lowercased()
+        selectedHuggingFaceArtifactID = catalog.artifacts.first {
+            guard let preferredQuantization else {
+                return $0.role == .main && $0.isComplete
+            }
+            return $0.role == .main
+                && $0.isComplete
+                && $0.quantization?.lowercased()
+                    == preferredQuantization
+        }?.id ?? catalog.artifacts.first {
+            $0.role == .main && $0.isComplete
+        }?.id ?? catalog.artifacts.first {
+            $0.role == .main
+        }?.id
+    }
+
+    private func isHuggingFaceReference(
+        _ input: String
+    ) -> Bool {
+        input.contains("/")
+            || input.localizedCaseInsensitiveContains(
+                "huggingface.co"
+            )
+            || input.contains("-hf")
+            || input.contains("--hf-repo")
+    }
+
+    private func performModelDownloadAction(
+        _ action: () async throws -> Void
+    ) async {
+        modelDownloadError = nil
+        do {
+            try await action()
+            modelDownloadSnapshot = await modelDownloadManager
+                .snapshot()
+            beginModelDownloadMonitor()
+        } catch {
+            modelDownloadError = error.localizedDescription
+        }
+    }
+
+    private func beginModelDownloadMonitor() {
+        guard modelDownloadMonitorTask == nil else {
+            return
+        }
+        modelDownloadMonitorTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else {
+                    return
+                }
+                let snapshot = await self.modelDownloadManager
+                    .snapshot()
+                self.modelDownloadSnapshot = snapshot
+
+                let completed = Set(
+                    snapshot.jobs.compactMap {
+                        $0.state == .completed ? $0.id : nil
+                    }
+                )
+                let newlyCompleted = completed.subtracting(
+                    self.observedCompletedDownloadIDs
+                )
+                self.observedCompletedDownloadIDs = completed
+                if !newlyCompleted.isEmpty {
+                    await self.refreshModels()
+                    for job in snapshot.jobs
+                    where newlyCompleted.contains(job.id) {
+                        await self.ensureProfile(
+                            for: job,
+                            select: true
+                        )
+                    }
+                }
+
+                try? await Task.sleep(
+                    nanoseconds: snapshot.activeJobID == nil
+                        ? 1_000_000_000
+                        : 250_000_000
+                )
+            }
+        }
+    }
+
+    private func reconcileCompletedDownloadProfiles(
+        selectNewProfile: Bool
+    ) async {
+        var shouldSelect = selectNewProfile
+        for job in modelDownloadSnapshot.jobs
+        where job.state == .completed {
+            _ = await ensureProfile(
+                for: job,
+                select: shouldSelect
+            )
+            if shouldSelect {
+                shouldSelect = false
+            }
+        }
+    }
+
+    @discardableResult
+    private func ensureProfile(
+        for job: ModelDownloadJob,
+        select: Bool
+    ) async -> Bool {
+        do {
+            let candidate = try modelDownloadProfileFactory
+                .makeProfile(
+                    for: job,
+                    modelsRoot: applicationDirectories.models,
+                    runtimeID: selectedRuntimeID
+                )
+            if
+                let existing = profiles.first(
+                    where: {
+                        canonicalPath($0.model.mainPath)
+                            == canonicalPath(
+                                candidate.model.mainPath
+                            )
+                            && canonicalOptionalPath(
+                                $0.model.mmprojPath
+                            )
+                                == canonicalOptionalPath(
+                                    candidate.model.mmprojPath
+                                )
+                            && canonicalOptionalPath(
+                                $0.model.draftPath
+                            )
+                                == canonicalOptionalPath(
+                                    candidate.model.draftPath
+                                )
+                    }
+                )
+            {
+                if select {
+                    selectProfile(existing.id)
+                }
+                return false
+            }
+
+            try await profileStore.save(candidate)
+            profiles.append(candidate)
+            profiles.sort {
+                if $0.updatedAt == $1.updatedAt {
+                    return $0.id.uuidString
+                        < $1.id.uuidString
+                }
+                return $0.updatedAt > $1.updatedAt
+            }
+            if select {
+                selectProfile(candidate.id)
+            }
+            return true
+        } catch {
+            modelDownloadError = """
+                Model import completed, but its launch profile could not \
+                be created: \(error.localizedDescription)
+                """
+            return false
+        }
+    }
+
+    private func canonicalOptionalPath(
+        _ path: String?
+    ) -> String? {
+        path.map(canonicalPath)
     }
 
     var canChangeManagedRuntime: Bool {

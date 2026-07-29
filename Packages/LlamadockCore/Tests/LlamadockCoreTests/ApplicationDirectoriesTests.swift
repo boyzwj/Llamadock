@@ -15,6 +15,8 @@ struct ApplicationDirectoriesTests {
         #expect(directories.models == root.appending(path: "models", directoryHint: .isDirectory))
         #expect(directories.profiles == root.appending(path: "profiles", directoryHint: .isDirectory))
         #expect(directories.downloads == root.appending(path: "downloads", directoryHint: .isDirectory))
+        #expect(directories.downloadState == root.appending(path: "downloads/state.json", directoryHint: .notDirectory))
+        #expect(directories.downloadJobs == root.appending(path: "downloads/jobs", directoryHint: .isDirectory))
         #expect(directories.logs == root.appending(path: "logs", directoryHint: .isDirectory))
         #expect(directories.cache == root.appending(path: "cache", directoryHint: .isDirectory))
         #expect(
