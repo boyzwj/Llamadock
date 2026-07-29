@@ -30,17 +30,17 @@ struct ServersView: View {
                 Button("Start", systemImage: "play.fill") {
                     Task { await appModel.startServer() }
                 }
-                .disabled(!canStart)
+                .disabled(!appModel.canStartServer)
 
                 Button("Stop", systemImage: "stop.fill") {
                     Task { await appModel.stopServer() }
                 }
-                .disabled(!canStop)
+                .disabled(!appModel.canStopServer)
 
                 Button("Restart", systemImage: "arrow.clockwise") {
                     Task { await appModel.restartServer() }
                 }
-                .disabled(!canStop)
+                .disabled(!appModel.canStopServer)
             }
         }
     }
@@ -171,27 +171,6 @@ struct ServersView: View {
         .accessibilityLabel("Server log")
     }
 
-    private var canStart: Bool {
-        guard
-            !appModel.isServerOperationInProgress,
-            appModel.selectedRuntime != nil,
-            appModel.profile != nil
-        else {
-            return false
-        }
-        return appModel.serverSnapshot.state == .stopped
-            || isFailed
-    }
-
-    private var canStop: Bool {
-        switch appModel.serverSnapshot.state {
-        case .starting, .ready, .degraded:
-            return true
-        case .stopped, .failed, .stopping:
-            return false
-        }
-    }
-
     private var stateTitle: String {
         switch appModel.serverSnapshot.state {
         case .stopped:
@@ -241,13 +220,6 @@ struct ServersView: View {
 
     private var isDegraded: Bool {
         if case .degraded = appModel.serverSnapshot.state {
-            return true
-        }
-        return false
-    }
-
-    private var isFailed: Bool {
-        if case .failed = appModel.serverSnapshot.state {
             return true
         }
         return false

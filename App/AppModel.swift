@@ -1215,6 +1215,31 @@ final class AppModel {
         serverSnapshot = await serverController.snapshot()
     }
 
+    var canStartServer: Bool {
+        guard
+            !isServerOperationInProgress,
+            selectedRuntime != nil,
+            profile != nil
+        else {
+            return false
+        }
+        switch serverSnapshot.state {
+        case .stopped, .failed:
+            return true
+        case .starting, .ready, .degraded, .stopping:
+            return false
+        }
+    }
+
+    var canStopServer: Bool {
+        switch serverSnapshot.state {
+        case .starting, .ready, .degraded:
+            return true
+        case .stopped, .failed, .stopping:
+            return false
+        }
+    }
+
     func stopServer() async {
         isServerOperationInProgress = true
         defer { isServerOperationInProgress = false }
