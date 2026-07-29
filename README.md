@@ -8,16 +8,24 @@ The project follows the architecture and milestones in [DESIGN.md](DESIGN.md).
 
 ## Status
 
-Milestones 0 and 1 are complete. The external-runtime vertical slice provides
-Homebrew and custom runtime discovery, capability probes, local GGUF selection,
-readable JSON profiles, exact launch-command previews, one owned
-`llama-server` process, occupied-port preflight, bounded redacted logs, health
-polling, and WebUI access.
+Milestones 0 through 2 are complete. In addition to the external-runtime
+vertical slice, LlamaDock can query and cache the official latest `llama.cpp`
+release, securely download and extract its macOS arm64 archive, validate its
+Mach-O binaries and reported build, atomically register it, activate it, and
+roll back to the previous managed version.
 
 The Milestone 1 acceptance flow is qualified end to end with official
 `llama.cpp` and GGUF artifacts: select runtime and model → preview the exact
 command → start → ready → OpenAI-compatible completion → stop, with the owned
 PID and listening socket gone afterward. Profiles restore after relaunch.
+
+The Milestone 2 flow is also qualified through the real macOS UI: check the
+official GitHub release → install and validate `b10176` → persist an active
+managed registry → relaunch from the validated release cache → start the
+managed runtime → complete an OpenAI-compatible request → stop and release the
+socket. Simulated verification, registration, and activation failures cover
+the non-destructive rollback boundaries. The full core suite now has 73 tests
+across 20 suites.
 
 ## Requirements
 
@@ -74,10 +82,25 @@ The recorded Milestone 1 qualification used:
   process shutdown, persistence after relaunch, and occupied-port rejection
   before process launch
 
+## Managed runtime storage
+
+LlamaDock owns a transparent runtime directory under
+`~/Library/Application Support/Llamadock/runtimes/`:
+
+- `registry.json` records installed, active, and previous runtime IDs;
+- `<tag>-macos-arm64/` contains each validated release;
+- `downloads/` contains only in-progress transaction directories and is cleaned
+  after success or failure.
+
+The app checks for updates at most once per day by default, restores a validated
+release cache without a network request between checks, and never switches a
+running LlamaDock server. Manual Check Updates, Install & Activate, Activate
+Selected, Roll Back, and Copy Diagnostics controls are available in Runtimes.
+
 ## Current limitations
 
-- Milestone 1 manages external runtimes and local model files. Managed runtime
-  installation, resumable model downloads, and the full library arrive in later
+- Managed runtime deletion and automatic retention pruning are not exposed yet.
+  Resumable model downloads and the full model library arrive in later
   milestones.
 - Runtime and model files remain in their original locations. Moving or deleting
   them makes the saved profile invalid until a replacement is selected.
