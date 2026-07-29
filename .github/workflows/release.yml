@@ -28,7 +28,7 @@ jobs:
       NOTARY_PROFILE: llamadock-ci
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
       - name: Configure ephemeral keychain path
         run: |
@@ -161,7 +161,7 @@ jobs:
 
       - name: Upload signed release candidate
         if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: LlamaDock-${{ env.RELEASE_VERSION }}-signed-notarized
           path: dist/release/*

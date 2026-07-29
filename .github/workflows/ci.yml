@@ -12,7 +12,7 @@ jobs:
     name: Core tests
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - name: Test LlamadockCore
         run: swift test --package-path Packages/LlamadockCore
 
@@ -20,7 +20,7 @@ jobs:
     name: macOS app
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - name: Build Debug app
         run: >-
           xcodebuild
