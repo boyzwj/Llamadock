@@ -48,7 +48,7 @@ for required_text in \
     'workflow_dispatch:' \
     'tags:' \
     'Scripts/package-release.sh' \
-    'actions/upload-artifact@v4' \
+    'actions/upload-artifact@v7.0.1' \
     "if: github.event_name == 'push'" \
     'gh release create' \
     'APPLE_CERTIFICATE_BASE64' \
