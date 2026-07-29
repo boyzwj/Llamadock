@@ -1,6 +1,12 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      expected_version:
+        description: Version to qualify, for example 1.0.0
+        required: true
+        type: string
   push:
     tags:
       - "v*"
@@ -14,7 +20,7 @@ concurrency:
 
 jobs:
   release:
-    name: Sign, notarize, and publish
+    name: Sign, notarize, and package
     runs-on: macos-15
     timeout-minutes: 45
     env:
@@ -31,11 +37,10 @@ jobs:
             >>"${GITHUB_ENV}"
 
       - name: Verify tag and release contract
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          [[ "${GITHUB_REF_NAME}" == "v${version}" ]]
-          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           Scripts/verify-release-contract.sh
           project_version="$(
             xcodebuild \
@@ -48,7 +53,16 @@ jobs:
                 exit
               }'
           )"
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            [[ "${GITHUB_REF_NAME}" == "v${version}" ]]
+          else
+            version="${EXPECTED_VERSION}"
+          fi
+          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "${version}" == "${project_version}" ]]
+          printf 'RELEASE_VERSION=%s\n' "${version}" \
+            >>"${GITHUB_ENV}"
 
       - name: Test core
         run: swift test --package-path Packages/LlamadockCore
@@ -129,32 +143,42 @@ jobs:
           DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
           NOTARY_KEYCHAIN_PROFILE: ${{ env.NOTARY_PROFILE }}
           NOTARY_KEYCHAIN: ${{ env.KEYCHAIN_PATH }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: Scripts/package-release.sh
+        run: |
+          RELEASE_TAG="v${RELEASE_VERSION}" \
+            Scripts/package-release.sh
 
       - name: Verify release assets
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
           cd dist/release
           shasum -a 256 -c \
-            "LlamaDock-${version}-macOS-arm64.zip.sha256"
+            "LlamaDock-${RELEASE_VERSION}-macOS-arm64.zip.sha256"
           shasum -a 256 -c \
-            "LlamaDock-${version}-dSYM.zip.sha256"
-          [[ -s "LlamaDock-${version}-macOS-arm64.zip" ]]
-          [[ -s "LlamaDock-${version}-dSYM.zip" ]]
+            "LlamaDock-${RELEASE_VERSION}-dSYM.zip.sha256"
+          [[ -s \
+            "LlamaDock-${RELEASE_VERSION}-macOS-arm64.zip" ]]
+          [[ -s "LlamaDock-${RELEASE_VERSION}-dSYM.zip" ]]
 
-      - name: Publish GitHub Release
+      - name: Upload signed release candidate
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: LlamaDock-${{ env.RELEASE_VERSION }}-signed-notarized
+          path: dist/release/*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish GitHub Release from tag
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
           gh release create "${GITHUB_REF_NAME}" \
-            "dist/release/LlamaDock-${version}-macOS-arm64.zip" \
-            "dist/release/LlamaDock-${version}-macOS-arm64.zip.sha256" \
-            "dist/release/LlamaDock-${version}-dSYM.zip" \
-            "dist/release/LlamaDock-${version}-dSYM.zip.sha256" \
+            "dist/release/LlamaDock-${RELEASE_VERSION}-macOS-arm64.zip" \
+            "dist/release/LlamaDock-${RELEASE_VERSION}-macOS-arm64.zip.sha256" \
+            "dist/release/LlamaDock-${RELEASE_VERSION}-dSYM.zip" \
+            "dist/release/LlamaDock-${RELEASE_VERSION}-dSYM.zip.sha256" \
             --verify-tag \
             --generate-notes \
             --title "LlamaDock ${GITHUB_REF_NAME}"

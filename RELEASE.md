@@ -26,18 +26,25 @@ uploads an unsigned fallback artifact.
 
 1. Merge a clean Milestone 5 pull request after Core, App, and release-contract
    checks pass.
-2. Record smoke evidence on at least two Apple Silicon generations with
-   different memory capacities in `docs/release-qualification.md`.
-3. Confirm `MARKETING_VERSION`, `CURRENT_PROJECT_VERSION`, release notes,
+2. Run the `Release` workflow manually from the intended main commit and enter
+   its semantic `expected_version`. Manual mode signs, notarizes, staples, and
+   verifies the candidate with the production pipeline, then uploads a private
+   seven-day GitHub Actions artifact. It never creates a GitHub Release.
+3. Download the signed candidate and matching SHA-256 file from the workflow.
+   Verify and smoke it on at least two Apple Silicon generations with different
+   memory capacities. Record the real evidence in
+   `docs/release-qualification.md`.
+4. Confirm `MARKETING_VERSION`, `CURRENT_PROJECT_VERSION`, release notes,
    privacy documentation, licenses, and the qualification record.
-4. Create and push an annotated tag matching the app version, for example
+5. Create and push an annotated tag on the qualified commit matching the app
+   version, for example
    `v1.0.0`.
-5. Wait for the `Release` workflow. It rebuilds and tests from the tag, imports
+6. Wait for the `Release` workflow. It rebuilds and tests from the tag, imports
    signing credentials, creates an arm64 archive, verifies Developer ID and
    Hardened Runtime, notarizes, staples, checks Gatekeeper, creates ZIP and
    dSYM archives, verifies SHA-256 files, and only then creates the GitHub
    Release.
-6. Download the published ZIP on a clean test account, verify its SHA-256,
+7. Download the published ZIP on a clean test account, verify its SHA-256,
    launch it through Finder, and repeat the core start/completion/stop smoke.
 
 Do not create a public GitHub Release manually from a local unsigned build.

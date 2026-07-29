@@ -9,6 +9,7 @@ or inferred evidence.
 - Build: `1`
 - Git commit: `1ce3eae9696589eec930981694ee0aa650ecf1dd`
 - Git tag: `v1.0.0`
+- GitHub Actions release candidate run: pending
 - GitHub Actions release run: pending
 - ZIP SHA-256: pending
 - Notarization submission ID: pending
