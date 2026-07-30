@@ -1132,6 +1132,14 @@ final class AppModel {
         }
     }
 
+    func discardFailedModelDownload(
+        id: UUID
+    ) async {
+        await performModelDownloadAction {
+            try await modelDownloadManager.discardFailed(id: id)
+        }
+    }
+
     func createProfile(
         for model: LocalModelFile
     ) {

@@ -349,6 +349,140 @@ struct ModelDownloadManagerTests {
         #expect(await transport.transfers().isEmpty)
     }
 
+    @Test("discarding a failed job removes its transaction and incomplete import")
+    func discardsFailedDownloadRemnants() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directories = ApplicationDirectories(root: root)
+        let manager = ModelDownloadManager(
+            directories: directories,
+            transport: FixtureModelDownloadTransport(
+                payloads: []
+            ),
+            urlResolver: StaticHuggingFaceFileURLResolver(
+                url: URL(string: "http://example.com/model.gguf")!
+            ),
+            tokenStore: StaticHuggingFaceTokenStore()
+        )
+        let id = try await manager.enqueue(
+            request(
+                files: [
+                    requestFile(
+                        artifactID: "main",
+                        role: .main,
+                        path: "model.gguf",
+                        payload: Data("abcdef".utf8)
+                    ),
+                ]
+            )
+        )
+        let failed = try await waitForState(
+            .failed,
+            id: id,
+            manager: manager
+        )
+        let transactionURL = directories.downloadJobs.appending(
+            path: id.uuidString,
+            directoryHint: .isDirectory
+        )
+        let finalURL = directories.models.appending(
+            path: failed.destinationRelativeDirectory,
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(
+            at: transactionURL,
+            withIntermediateDirectories: true
+        )
+        try Data("partial".utf8).write(
+            to: transactionURL.appending(path: "model.gguf.part")
+        )
+        try FileManager.default.createDirectory(
+            at: finalURL,
+            withIntermediateDirectories: true
+        )
+        try Data("short".utf8).write(
+            to: finalURL.appending(path: "model.gguf")
+        )
+
+        try await manager.discardFailed(id: id)
+
+        #expect(
+            await manager.snapshot().jobs.allSatisfy {
+                $0.id != id
+            }
+        )
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: transactionURL.path
+            )
+        )
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: finalURL.path
+            )
+        )
+        let persistedJobs = try await JSONModelDownloadStore(
+            fileURL: directories.downloadState
+        ).loadJobs()
+        #expect(persistedJobs.allSatisfy { $0.id != id })
+    }
+
+    @Test("discard refuses a completed job and preserves its imported files")
+    func doesNotDiscardCompletedDownload() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directories = ApplicationDirectories(root: root)
+        let payload = minimalGGUF(name: "preserved")
+        let manager = ModelDownloadManager(
+            directories: directories,
+            transport: FixtureModelDownloadTransport(
+                payloads: [payload]
+            ),
+            tokenStore: StaticHuggingFaceTokenStore()
+        )
+        let id = try await manager.enqueue(
+            request(
+                files: [
+                    requestFile(
+                        artifactID: "main",
+                        role: .main,
+                        path: "model.gguf",
+                        payload: payload
+                    ),
+                ]
+            )
+        )
+        let completed = try await waitForState(
+            .completed,
+            id: id,
+            manager: manager
+        )
+        let importedFile = directories.models
+            .appending(
+                path: completed.destinationRelativeDirectory,
+                directoryHint: .isDirectory
+            )
+            .appending(
+                path: "model.gguf",
+                directoryHint: .notDirectory
+            )
+
+        await #expect(throws: ModelDownloadManagerError.self) {
+            try await manager.discardFailed(id: id)
+        }
+
+        #expect(
+            FileManager.default.fileExists(
+                atPath: importedFile.path
+            )
+        )
+        #expect(
+            await manager.snapshot().jobs.contains {
+                $0.id == id && $0.state == .completed
+            }
+        )
+    }
+
     @Test("rejects overlapping paths and duplicate companion roles")
     func rejectsAmbiguousArtifactGroups() async throws {
         let root = temporaryRoot()

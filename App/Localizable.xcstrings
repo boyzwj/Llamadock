@@ -1036,6 +1036,26 @@
         }
       }
     },
+    "Clean Up" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清理残余"
+          }
+        }
+      }
+    },
+    "Clean Up Download Remnants?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清理下载残余？"
+          }
+        }
+      }
+    },
     "Clear" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1492,6 +1512,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除所选项"
+          }
+        }
+      }
+    },
+    "Delete unfinished files and remove this failed task." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除未完成文件并从队列中移除此失败任务。"
           }
         }
       }
@@ -4403,6 +4433,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这会为单个文件创建配置。如果希望它在模型库中恢复，请另外添加其所在文件夹。"
+          }
+        }
+      }
+    },
+    "This permanently deletes unfinished files for %@ and removes the failed task from the download queue. This cannot be undone." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此操作将永久删除 %@ 的未完成文件，并从下载队列中移除失败任务。此操作无法撤销。"
           }
         }
       }

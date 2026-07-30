@@ -279,6 +279,51 @@ public actor ModelDownloadManager {
         }
     }
 
+    public func discardFailed(
+        id: UUID,
+        now: Date = Date()
+    ) async throws {
+        try await ensureRestored()
+        guard var job = jobs[id] else {
+            throw ModelDownloadManagerError.jobNotFound(id)
+        }
+        guard job.state == .failed else {
+            throw ModelDownloadManagerError.invalidState(
+                id,
+                job.state
+            )
+        }
+
+        let finalURL = finalDirectory(for: job)
+        if fileManager.fileExists(atPath: finalURL.path) {
+            if try importedFilesAreComplete(job) {
+                job.state = .completed
+                job.error = nil
+                job.files = job.files.map { file in
+                    var file = file
+                    file.receivedBytes = file.expectedSize
+                    file.isVerified = true
+                    return file
+                }
+                job.updatedAt = now
+                jobs[id] = job
+                cleanupTransaction(id: id)
+                try await persist()
+                return
+            }
+            try fileManager.removeItem(at: finalURL)
+        }
+
+        let transactionURL = jobDirectory(id: id)
+        if fileManager.fileExists(atPath: transactionURL.path) {
+            try fileManager.removeItem(at: transactionURL)
+        }
+
+        jobs.removeValue(forKey: id)
+        orderedJobIDs.removeAll { $0 == id }
+        try await persist()
+    }
+
     public func suspendForTermination(
         now: Date = Date()
     ) async {
@@ -494,8 +539,8 @@ public actor ModelDownloadManager {
             try Task.checkCancellation()
             try await transition(id: id, to: .importing)
             try importDownloadedFiles(jobID: id)
-            try await transition(id: id, to: .completed)
             cleanupTransaction(id: id)
+            try await transition(id: id, to: .completed)
         } catch is CancellationError {
             if jobs[id]?.state == .cancelled {
                 cleanupTransaction(id: id)

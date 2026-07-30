@@ -67,6 +67,14 @@ struct DownloadsView: View {
                                     )
                                 }
                             },
+                            cleanup: {
+                                Task {
+                                    await appModel
+                                        .discardFailedModelDownload(
+                                            id: job.id
+                                        )
+                                }
+                            },
                             reveal: {
                                 reveal(job)
                             }
@@ -186,12 +194,14 @@ struct DownloadsView: View {
 
 private struct DownloadJobCard: View {
     @Environment(\.locale) private var locale
+    @State private var isShowingCleanupConfirmation = false
 
     let job: ModelDownloadJob
     let isActive: Bool
     let pause: () -> Void
     let resume: () -> Void
     let cancel: () -> Void
+    let cleanup: () -> Void
     let reveal: () -> Void
 
     var body: some View {
@@ -260,6 +270,18 @@ private struct DownloadJobCard: View {
                             action: cancel
                         )
                     }
+                    if job.state == .failed {
+                        Button(
+                            "Clean Up",
+                            systemImage: "trash",
+                            role: .destructive
+                        ) {
+                            isShowingCleanupConfirmation = true
+                        }
+                        .help(
+                            "Delete unfinished files and remove this failed task."
+                        )
+                    }
                     if job.state == .completed {
                         Button(
                             "Show in Finder",
@@ -278,6 +300,17 @@ private struct DownloadJobCard: View {
                     )
                 }
             }
+        }
+        .alert(
+            "Clean Up Download Remnants?",
+            isPresented: $isShowingCleanupConfirmation
+        ) {
+            Button("Clean Up", role: .destructive, action: cleanup)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "This permanently deletes unfinished files for \(job.displayName) and removes the failed task from the download queue. This cannot be undone."
+            )
         }
     }
 
