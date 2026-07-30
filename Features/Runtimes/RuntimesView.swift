@@ -271,6 +271,25 @@ struct RuntimesView: View {
                         || !appModel.canChangeManagedRuntime
                 )
 
+                Button(
+                    "Delete Selected",
+                    systemImage: "trash",
+                    role: .destructive
+                ) {
+                    pendingRuntimeRemoval =
+                        appModel.selectedManagedRuntimeRecord
+                }
+                .disabled(
+                    !appModel.canRemoveSelectedManagedRuntime
+                )
+                .help(
+                    appModel
+                        .selectedManagedRuntimeRemovalBlockReason
+                        ?? localized(
+                            "Permanently delete this inactive managed runtime."
+                        )
+                )
+
                 Spacer()
             }
         }
