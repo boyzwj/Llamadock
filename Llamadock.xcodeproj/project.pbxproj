@@ -20,6 +20,12 @@
 		10000000000000000000000B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000D /* AppDelegate.swift */; };
 		10000000000000000000000C /* HuggingFaceModelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000E /* HuggingFaceModelsView.swift */; };
 		10000000000000000000000D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000F /* Assets.xcassets */; };
+		10000000000000000000000E /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000010 /* Localization.swift */; };
+		10000000000000000000000F /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000011 /* Localizable.xcstrings */; };
+		100000000000000000000010 /* UIPrimitives.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000012 /* UIPrimitives.swift */; };
+		100000000000000000000011 /* LogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000013 /* LogsView.swift */; };
+		100000000000000000000012 /* DownloadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000014 /* DownloadsView.swift */; };
+		100000000000000000000013 /* ServiceMenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000015 /* ServiceMenuBarView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +44,12 @@
 		20000000000000000000000D /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		20000000000000000000000E /* HuggingFaceModelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HuggingFaceModelsView.swift; sourceTree = "<group>"; };
 		20000000000000000000000F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		200000000000000000000010 /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localization.swift; sourceTree = "<group>"; };
+		200000000000000000000011 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		200000000000000000000012 /* UIPrimitives.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIPrimitives.swift; sourceTree = "<group>"; };
+		200000000000000000000013 /* LogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogsView.swift; sourceTree = "<group>"; };
+		200000000000000000000014 /* DownloadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadsView.swift; sourceTree = "<group>"; };
+		200000000000000000000015 /* ServiceMenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceMenuBarView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -71,6 +83,10 @@
 				200000000000000000000003 /* AppSection.swift */,
 				200000000000000000000004 /* ContentView.swift */,
 				20000000000000000000000D /* AppDelegate.swift */,
+				200000000000000000000010 /* Localization.swift */,
+				200000000000000000000012 /* UIPrimitives.swift */,
+				200000000000000000000015 /* ServiceMenuBarView.swift */,
+				200000000000000000000011 /* Localizable.xcstrings */,
 				20000000000000000000000F /* Assets.xcassets */,
 			);
 			path = App;
@@ -109,6 +125,7 @@
 			children = (
 				200000000000000000000007 /* ModelsView.swift */,
 				20000000000000000000000E /* HuggingFaceModelsView.swift */,
+				200000000000000000000014 /* DownloadsView.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -117,6 +134,7 @@
 			isa = PBXGroup;
 			children = (
 				200000000000000000000008 /* ServersView.swift */,
+				200000000000000000000013 /* LogsView.swift */,
 			);
 			path = Servers;
 			sourceTree = "<group>";
@@ -181,6 +199,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				"zh-Hans",
 				Base,
 			);
 			mainGroup = 400000000000000000000001;
@@ -202,6 +221,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				10000000000000000000000D /* Assets.xcassets in Resources */,
+				10000000000000000000000F /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -223,6 +243,11 @@
 				100000000000000000000009 /* SettingsView.swift in Sources */,
 				10000000000000000000000B /* AppDelegate.swift in Sources */,
 				10000000000000000000000C /* HuggingFaceModelsView.swift in Sources */,
+				10000000000000000000000E /* Localization.swift in Sources */,
+				100000000000000000000010 /* UIPrimitives.swift in Sources */,
+				100000000000000000000011 /* LogsView.swift in Sources */,
+				100000000000000000000012 /* DownloadsView.swift in Sources */,
+				100000000000000000000013 /* ServiceMenuBarView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

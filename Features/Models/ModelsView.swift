@@ -5,23 +5,41 @@ import UniformTypeIdentifiers
 
 struct ModelsView: View {
     @Environment(AppModel.self) private var appModel
+    @Environment(\.locale) private var locale
     @State private var searchText = ""
     @State private var validationFilter = ModelValidationFilter.all
     @State private var source = ModelSource.local
+    @State private var profileEditorLevel =
+        ProfileEditorLevel.basic
     @State private var pendingModelTrash: LocalModelFile?
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Model Source", selection: $source) {
-                ForEach(ModelSource.allCases) { source in
-                    Label(source.title, systemImage: source.icon)
-                        .tag(source)
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Models")
+                        .font(.largeTitle.bold())
+                    Text("Local GGUF library and Hugging Face")
+                        .foregroundStyle(.secondary)
                 }
+
+                Spacer()
+
+                Picker("Model Source", selection: $source) {
+                    ForEach(ModelSource.allCases) { source in
+                        Label(
+                            source.localizedTitle(locale: locale),
+                            systemImage: source.icon
+                        )
+                            .tag(source)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 360)
             }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .frame(width: 360)
-            .padding(.vertical, 10)
+            .padding(.horizontal, LlamaDockLayout.pagePadding)
+            .padding(.vertical, 14)
 
             Divider()
 
@@ -71,7 +89,9 @@ struct ModelsView: View {
                         .help(
                             appModel.localModelTrashBlockReason(
                                 model
-                            ) ?? "Move this GGUF file to the system Trash."
+                            ) ?? localized(
+                                "Move this GGUF file to the system Trash."
+                            )
                         )
                     }
                 }
@@ -124,9 +144,16 @@ struct ModelsView: View {
             } else {
                 HSplitView {
                     modelList
-                        .frame(minWidth: 300, idealWidth: 360)
+                        .frame(
+                            minWidth: ModelBrowserSplitLayout.listMinWidth,
+                            idealWidth: ModelBrowserSplitLayout.listIdealWidth,
+                            maxWidth: ModelBrowserSplitLayout.listMaxWidth
+                        )
                     modelDetail
-                        .frame(minWidth: 480)
+                        .frame(
+                            minWidth: ModelBrowserSplitLayout.detailMinWidth,
+                            maxWidth: .infinity
+                        )
                 }
             }
         }
@@ -232,7 +259,8 @@ struct ModelsView: View {
 
                 Picker("Validation", selection: $validationFilter) {
                     ForEach(ModelValidationFilter.allCases) { filter in
-                        Text(filter.title).tag(filter)
+                        Text(filter.localizedTitle(locale: locale))
+                            .tag(filter)
                     }
                 }
                 .labelsHidden()
@@ -290,7 +318,9 @@ struct ModelsView: View {
                     Text(byteCount(appModel.localModelByteCount))
                     Text("•")
                     Text(
-                        "Scanned \(snapshot.roots.count) \(snapshot.roots.count == 1 ? "root" : "roots")"
+                        localized(
+                            "Scanned \(snapshot.roots.count) model folders"
+                        )
                     )
                     if !snapshot.issues.isEmpty {
                         Text("•")
@@ -400,7 +430,9 @@ struct ModelsView: View {
                 .help(
                     appModel.localModelTrashBlockReason(
                         model
-                    ) ?? "Move this GGUF file to the system Trash."
+                    ) ?? localized(
+                        "Move this GGUF file to the system Trash."
+                    )
                 )
             }
 
@@ -417,7 +449,10 @@ struct ModelsView: View {
     ) -> some View {
         GroupBox("GGUF Metadata") {
             Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 9) {
-                metadataRow("Role", model.role.displayName)
+                metadataRow(
+                    "Role",
+                    model.role.localizedDisplayName(locale: locale)
+                )
                 metadataRow("File size", byteCount(model.fileSize))
 
                 if let metadata = model.metadata {
@@ -430,13 +465,13 @@ struct ModelsView: View {
                         "Quantization",
                         metadata.quantization
                             ?? metadata.fileType.map(String.init)
-                            ?? "Unknown"
+                            ?? localized("Unknown")
                     )
                     metadataRow(
                         "Context",
                         metadata.contextLength.map {
                             $0.formatted()
-                        } ?? "Unknown"
+                        } ?? localized("Unknown")
                     )
                     metadataRow(
                         "Tensors",
@@ -448,12 +483,16 @@ struct ModelsView: View {
                     )
                     metadataRow(
                         "Chat template",
-                        metadata.hasChatTemplate ? "Present" : "Not declared"
+                        metadata.hasChatTemplate
+                            ? localized("Present")
+                            : localized("Not declared")
                     )
                     if let shard = metadata.shard {
                         metadataRow(
                             "Split",
-                            "Shard \(shard.zeroBasedIndex + 1) of \(shard.count)"
+                            localized(
+                                "Shard \(shard.zeroBasedIndex + 1) of \(shard.count)"
+                            )
                         )
                     }
                 }
@@ -464,7 +503,7 @@ struct ModelsView: View {
     }
 
     private func metadataRow(
-        _ title: String,
+        _ title: LocalizedStringKey,
         _ value: String
     ) -> some View {
         GridRow {
@@ -568,7 +607,9 @@ struct ModelsView: View {
                     .foregroundStyle(.secondary)
                 } else {
                     Text(
-                        "\(modelProfiles.count) saved \(modelProfiles.count == 1 ? "profile" : "profiles"). The most recently edited profile appears first."
+                        localized(
+                            "\(modelProfiles.count) saved profiles. The most recently edited profile appears first."
+                        )
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -582,6 +623,17 @@ struct ModelsView: View {
         GroupBox("Launch Profile") {
             VStack(alignment: .leading, spacing: 12) {
                 capabilitySummary
+
+                Picker(
+                    "Profile Detail",
+                    selection: $profileEditorLevel
+                ) {
+                    ForEach(ProfileEditorLevel.allCases) { level in
+                        Text(level.title).tag(level)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Profile detail level")
 
                 Form {
                     Section("Identity and Models") {
@@ -605,7 +657,9 @@ struct ModelsView: View {
                         capabilityField("Vision Projector", flag: "--mmproj") {
                             companionPathControls(
                                 path: appModel.profile?.model.mmprojPath,
-                                title: "Choose a Vision Projector",
+                                title: localized(
+                                    "Choose a Vision Projector"
+                                ),
                                 set: {
                                     $0.model.mmprojPath = $1
                                 }
@@ -615,7 +669,7 @@ struct ModelsView: View {
                         capabilityField("Draft Model", flag: "--model-draft") {
                             companionPathControls(
                                 path: appModel.profile?.model.draftPath,
-                                title: "Choose a Draft Model",
+                                title: localized("Choose a Draft Model"),
                                 set: {
                                     $0.model.draftPath = $1
                                 }
@@ -636,7 +690,8 @@ struct ModelsView: View {
                         }
                     }
 
-                    Section("Performance") {
+                    if profileEditorLevel.includes(.performance) {
+                        Section("Performance") {
                         optionalIntegerField(
                             "Context Size",
                             flag: "--ctx-size",
@@ -677,7 +732,10 @@ struct ModelsView: View {
                                 selection: flashAttentionBinding
                             ) {
                                 ForEach(OptionalBooleanChoice.allCases) {
-                                    Text($0.title).tag($0)
+                                    Text(
+                                        $0.localizedTitle(locale: locale)
+                                    )
+                                    .tag($0)
                                 }
                             }
                             .labelsHidden()
@@ -695,9 +753,11 @@ struct ModelsView: View {
                                 text: cacheTypeVBinding
                             )
                         }
+                        }
                     }
 
-                    Section("Sampling") {
+                    if profileEditorLevel.includes(.advanced) {
+                        Section("Sampling") {
                         optionalDecimalField(
                             "Temperature",
                             flag: "--temp",
@@ -728,9 +788,9 @@ struct ModelsView: View {
                             flag: "--seed",
                             binding: seedBinding
                         )
-                    }
+                        }
 
-                    Section("System Prompt") {
+                        Section("System Prompt") {
                         capabilityField(
                             "Prompt",
                             flag: "--system-prompt"
@@ -738,9 +798,9 @@ struct ModelsView: View {
                             TextEditor(text: systemPromptBinding)
                                 .frame(minHeight: 70)
                         }
-                    }
+                        }
 
-                    Section("Extra Arguments") {
+                        Section("Extra Arguments") {
                         TextEditor(text: extraArgumentsBinding)
                             .font(.system(.body, design: .monospaced))
                             .frame(minHeight: 80)
@@ -749,6 +809,7 @@ struct ModelsView: View {
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        }
                     }
 
                     Section("Generated Command") {
@@ -762,7 +823,9 @@ struct ModelsView: View {
                         } else {
                             Label(
                                 appModel.commandError
-                                    ?? "Choose a validated runtime.",
+                                    ?? localized(
+                                        "Choose a validated runtime."
+                                    ),
                                 systemImage: "exclamationmark.triangle"
                             )
                             .foregroundStyle(.orange)
@@ -810,7 +873,7 @@ struct ModelsView: View {
     }
 
     private func capabilityField<Content: View>(
-        _ title: String,
+        _ title: LocalizedStringKey,
         flag: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
@@ -830,7 +893,7 @@ struct ModelsView: View {
     }
 
     private func optionalIntegerField(
-        _ title: String,
+        _ title: LocalizedStringKey,
         flag: String,
         binding: Binding<String>
     ) -> some View {
@@ -840,7 +903,7 @@ struct ModelsView: View {
     }
 
     private func optionalDecimalField(
-        _ title: String,
+        _ title: LocalizedStringKey,
         flag: String,
         binding: Binding<String>
     ) -> some View {
@@ -855,7 +918,7 @@ struct ModelsView: View {
         set: @escaping (inout LaunchProfile, String?) -> Void
     ) -> some View {
         HStack {
-            Text(path ?? "Not configured")
+            Text(path ?? localized("Not configured"))
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(path == nil ? .secondary : .primary)
                 .lineLimit(1)
@@ -959,7 +1022,12 @@ struct ModelsView: View {
 
     private var portBinding: Binding<Int> {
         Binding(
-            get: { Int(appModel.profile?.server.port ?? 8_080) },
+            get: {
+                Int(
+                    appModel.profile?.server.port
+                        ?? ServerOptions.defaultPort
+                )
+            },
             set: { value in
                 let bounded = min(max(value, 1), Int(UInt16.max))
                 appModel.updateProfile {
@@ -1184,11 +1252,11 @@ struct ModelsView: View {
 
     private func chooseDirectories() {
         let panel = NSOpenPanel()
-        panel.title = "Add Model Folders"
-        panel.message = """
+        panel.title = localized("Add Model Folders")
+        panel.message = localized("""
             LlamaDock stores a security-scoped bookmark and scans GGUF \
             metadata without moving model files.
-            """
+            """)
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
@@ -1207,11 +1275,11 @@ struct ModelsView: View {
 
     private func chooseModel() {
         let panel = NSOpenPanel()
-        panel.title = "Open a GGUF Model"
-        panel.message = """
+        panel.title = localized("Open a GGUF Model")
+        panel.message = localized("""
             This creates a profile for one file. Add its folder separately \
             if you want it restored in the model library.
-            """
+            """)
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
@@ -1251,7 +1319,7 @@ struct ModelsView: View {
 
     private func importProfile() {
         let panel = NSOpenPanel()
-        panel.title = "Import a LlamaDock Profile"
+        panel.title = localized("Import a LlamaDock Profile")
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
@@ -1270,7 +1338,7 @@ struct ModelsView: View {
             return
         }
         let panel = NSSavePanel()
-        panel.title = "Export LlamaDock Profile"
+        panel.title = localized("Export LlamaDock Profile")
         panel.allowedContentTypes = [.json]
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = profile.name.replacingOccurrences(
@@ -1300,20 +1368,19 @@ struct ModelsView: View {
         )
         let profileWarning: String
         if referenceCount == 0 {
-            profileWarning = "No saved Profile references this file."
+            profileWarning = localized(
+                "No saved profiles reference this file."
+            )
         } else {
-            profileWarning = """
-                \(referenceCount) saved \
-                \(referenceCount == 1 ? "Profile" : "Profiles") will retain \
-                this path and cannot use it until the file is restored or \
-                replaced.
-                """
+            profileWarning = localized(
+                "\(referenceCount) saved profiles will retain this path and cannot use it until the file is restored or replaced."
+            )
         }
-        return """
+        return localized("""
             LlamaDock will move only \(model.url.lastPathComponent) to the \
             macOS Trash. It will not delete the containing folder or other \
             split/companion files. \(profileWarning)
-            """
+            """)
     }
 
     private func copy(
@@ -1326,11 +1393,10 @@ struct ModelsView: View {
     private func byteCount(
         _ value: UInt64
     ) -> String {
-        ByteCountFormatter.string(
-            fromByteCount: Int64(
-                min(value, UInt64(Int64.max))
-            ),
-            countStyle: .file
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(
+            fromByteCount: Int64(min(value, UInt64(Int64.max)))
         )
     }
 
@@ -1354,13 +1420,27 @@ struct ModelsView: View {
                 Double(value) / 1_000
             )
         default:
-            value.formatted()
+            value.formatted(.number.locale(locale))
         }
     }
+
+    private func localized(
+        _ value: String.LocalizationValue
+    ) -> String {
+        appLocalizedString(value, locale: locale)
+    }
+}
+
+enum ModelBrowserSplitLayout {
+    static let listMinWidth: CGFloat = 220
+    static let listIdealWidth: CGFloat = 280
+    static let listMaxWidth: CGFloat = 320
+    static let detailMinWidth: CGFloat = 440
 }
 
 private struct ModelLibraryRow: View {
     let model: LocalModelFile
+    @Environment(\.locale) private var locale
 
     var body: some View {
         HStack(spacing: 10) {
@@ -1373,7 +1453,9 @@ private struct ModelLibraryRow: View {
                 Text(model.displayName)
                     .lineLimit(1)
                 HStack(spacing: 5) {
-                    Text(model.role.displayName)
+                    Text(
+                        model.role.localizedDisplayName(locale: locale)
+                    )
                     if let architecture = model.metadata?.architecture {
                         Text("•")
                         Text(architecture)
@@ -1428,6 +1510,7 @@ private struct ModelLibraryRow: View {
 
 private struct ModelStatusBadge: View {
     let model: LocalModelFile
+    @Environment(\.locale) private var locale
 
     var body: some View {
         Text(title)
@@ -1441,9 +1524,9 @@ private struct ModelStatusBadge: View {
     private var title: String {
         switch model.validation {
         case .valid:
-            model.role.displayName
+            model.role.localizedDisplayName(locale: locale)
         case .invalid:
-            "Invalid"
+            appLocalizedString("Invalid", locale: locale)
         }
     }
 
@@ -1464,12 +1547,12 @@ private enum ModelSource:
         rawValue
     }
 
-    var title: String {
+    func localizedTitle(locale: Locale) -> String {
         switch self {
         case .local:
-            "Local Library"
+            appLocalizedString("Local Library", locale: locale)
         case .huggingFace:
-            "Hugging Face"
+            appLocalizedString("Hugging Face", locale: locale)
         }
     }
 
@@ -1496,14 +1579,14 @@ private enum ModelValidationFilter:
         rawValue
     }
 
-    var title: String {
+    func localizedTitle(locale: Locale) -> String {
         switch self {
         case .all:
-            "All Files"
+            appLocalizedString("All Files", locale: locale)
         case .valid:
-            "Valid"
+            appLocalizedString("Valid", locale: locale)
         case .invalid:
-            "Invalid"
+            appLocalizedString("Invalid", locale: locale)
         }
     }
 
@@ -1520,18 +1603,18 @@ private enum ModelValidationFilter:
 }
 
 private extension LocalModelRole {
-    var displayName: String {
+    func localizedDisplayName(locale: Locale) -> String {
         switch self {
         case .main:
-            "Main"
+            appLocalizedString("Main", locale: locale)
         case .mmproj:
-            "Vision Projector"
+            appLocalizedString("Vision Projector", locale: locale)
         case .draft:
-            "Draft"
+            appLocalizedString("Draft", locale: locale)
         case .adapter:
-            "Adapter"
+            appLocalizedString("Adapter", locale: locale)
         case .auxiliary:
-            "Auxiliary"
+            appLocalizedString("Auxiliary", locale: locale)
         }
     }
 }
@@ -1549,14 +1632,14 @@ private enum OptionalBooleanChoice:
         rawValue
     }
 
-    var title: String {
+    func localizedTitle(locale: Locale) -> String {
         switch self {
         case .runtimeDefault:
-            "Runtime default"
+            appLocalizedString("Runtime default", locale: locale)
         case .enabled:
-            "On"
+            appLocalizedString("On", locale: locale)
         case .disabled:
-            "Off"
+            appLocalizedString("Off", locale: locale)
         }
     }
 
@@ -1572,8 +1655,36 @@ private enum OptionalBooleanChoice:
     }
 }
 
+private enum ProfileEditorLevel:
+    Int,
+    CaseIterable,
+    Identifiable
+{
+    case basic
+    case performance
+    case advanced
+
+    var id: Self { self }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .basic:
+            "Basic"
+        case .performance:
+            "Performance"
+        case .advanced:
+            "Advanced"
+        }
+    }
+
+    func includes(_ level: Self) -> Bool {
+        rawValue >= level.rawValue
+    }
+}
+
 private struct CapabilitySupportBadge: View {
     let support: RuntimeFlagSupport
+    @Environment(\.locale) private var locale
 
     var body: some View {
         Label(title, systemImage: icon)
@@ -1587,11 +1698,11 @@ private struct CapabilitySupportBadge: View {
     private var title: String {
         switch support {
         case .supported:
-            "Supported"
+            appLocalizedString("Supported", locale: locale)
         case .unsupported:
-            "Unsupported"
+            appLocalizedString("Unsupported", locale: locale)
         case .unknown:
-            "Unknown"
+            appLocalizedString("Unknown", locale: locale)
         }
     }
 
@@ -1620,11 +1731,20 @@ private struct CapabilitySupportBadge: View {
     private var helpText: String {
         switch support {
         case .supported:
-            "The selected runtime advertises this flag."
+            appLocalizedString(
+                "The selected runtime advertises this flag.",
+                locale: locale
+            )
         case .unsupported:
-            "The selected runtime help does not advertise this flag."
+            appLocalizedString(
+                "The selected runtime help does not advertise this flag.",
+                locale: locale
+            )
         case .unknown:
-            "Runtime capability detection is unavailable or inconclusive."
+            appLocalizedString(
+                "Runtime capability detection is unavailable or inconclusive.",
+                locale: locale
+            )
         }
     }
 }

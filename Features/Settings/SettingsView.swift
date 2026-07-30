@@ -3,15 +3,133 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var appModel
+    @Environment(\.locale) private var locale
     @AppStorage("automaticallyCheckRuntimeUpdates")
     private var automaticallyCheckRuntimeUpdates = true
     @AppStorage("automaticallyCheckAppUpdates")
     private var automaticallyCheckAppUpdates = true
+    @AppStorage(AppLanguage.storageKey)
+    private var appLanguage = AppLanguage.system
+    @AppStorage(AppAppearance.showMenuBarIconKey)
+    private var showMenuBarIcon = true
+    @AppStorage(AppAppearance.showDockIconKey)
+    private var showDockIcon = true
     @State private var huggingFaceToken = ""
     @State private var diagnosticsCopied = false
 
     var body: some View {
-        Form {
+        TabView {
+            generalSettings
+                .tabItem {
+                    Label("General", systemImage: "gear")
+                }
+
+            appearanceSettings
+                .tabItem {
+                    Label("Appearance", systemImage: "paintbrush")
+                }
+
+            updateSettings
+                .tabItem {
+                    Label(
+                        "Updates",
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
+                }
+
+            huggingFaceSettings
+                .tabItem {
+                    Label("Hugging Face", systemImage: "globe")
+                }
+
+            diagnosticsSettings
+                .tabItem {
+                    Label(
+                        "Diagnostics",
+                        systemImage: "stethoscope"
+                    )
+                }
+
+            aboutSettings
+                .tabItem {
+                    Label("About", systemImage: "info.circle")
+                }
+        }
+        .frame(width: 620, height: 460)
+        .task {
+            appModel.refreshHuggingFaceTokenState()
+            applyDockAppearance()
+        }
+    }
+
+    private var generalSettings: some View {
+        settingsForm {
+            Section("Language") {
+                Picker("App Language", selection: $appLanguage) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.title)
+                            .tag(language)
+                    }
+                }
+
+                Text(
+                    "Language changes are applied immediately. Follow System uses English when the system language is not supported."
+                )
+                .settingsCaption()
+            }
+
+            Section("Service Lifecycle") {
+                Text(
+                    "LlamaDock owns only the llama-server process it starts. Quitting the app stops that process and does not install a background daemon."
+                )
+                .settingsCaption()
+            }
+        }
+    }
+
+    private var appearanceSettings: some View {
+        settingsForm {
+            Section("App Presence") {
+                Toggle(
+                    "Show menu bar icon",
+                    isOn: $showMenuBarIcon
+                )
+                .onChange(of: showMenuBarIcon) {
+                    if !showMenuBarIcon && !showDockIcon {
+                        showDockIcon = true
+                    }
+                    applyDockAppearance()
+                }
+
+                Toggle(
+                    "Show application icon in Dock",
+                    isOn: $showDockIcon
+                )
+                .disabled(!showMenuBarIcon && showDockIcon)
+                .onChange(of: showDockIcon) {
+                    if !showDockIcon {
+                        showMenuBarIcon = true
+                    }
+                    applyDockAppearance()
+                }
+
+                Text(
+                    "Keep at least one app entry visible so LlamaDock can always be reopened."
+                )
+                .settingsCaption()
+            }
+
+            Section("Accessibility") {
+                Text(
+                    "LlamaDock follows macOS Reduce Motion, Increase Contrast, keyboard navigation, and VoiceOver settings."
+                )
+                .settingsCaption()
+            }
+        }
+    }
+
+    private var updateSettings: some View {
+        settingsForm {
             Section("LlamaDock App") {
                 Toggle(
                     "Check for LlamaDock updates automatically",
@@ -20,8 +138,7 @@ struct SettingsView: View {
 
                 LabeledContent(
                     "Installed Version",
-                    value:
-                        "\(appModel.appVersion) (\(appModel.appBuild))"
+                    value: "\(appModel.appVersion) (\(appModel.appBuild))"
                 )
 
                 HStack {
@@ -49,8 +166,7 @@ struct SettingsView: View {
                     {
                         Link(
                             "Download \(check.release.version)",
-                            destination:
-                                check.release.releasePageURL
+                            destination: check.release.releasePageURL
                         )
                     }
                 }
@@ -58,35 +174,28 @@ struct SettingsView: View {
                 if let check = appModel.appUpdateCheck {
                     Label(
                         check.isUpdateAvailable
-                            ? "LlamaDock \(check.release.version) is available."
-                            : "LlamaDock is up to date.",
+                            ? localized(
+                                "LlamaDock \(check.release.version) is available."
+                            )
+                            : localized("LlamaDock is up to date."),
                         systemImage: check.isUpdateAvailable
                             ? "arrow.down.circle.fill"
                             : "checkmark.circle.fill"
                     )
                     .font(.caption)
                     .foregroundStyle(
-                        check.isUpdateAvailable
-                            ? .blue
-                            : .green
+                        check.isUpdateAvailable ? .blue : .green
                     )
                 }
 
                 if let error = appModel.appUpdateError {
-                    Label(
-                        error,
-                        systemImage: "exclamationmark.triangle.fill"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .textSelection(.enabled)
+                    InlineNotice(error)
                 }
 
                 Text(
                     "LlamaDock app releases come from this project's signed GitHub Releases. This channel never changes the separately managed llama.cpp runtime."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsCaption()
             }
 
             Section("llama.cpp Runtime") {
@@ -94,21 +203,26 @@ struct SettingsView: View {
                     "Check for runtime updates automatically",
                     isOn: $automaticallyCheckRuntimeUpdates
                 )
-                Text("Runtime updates are independent from LlamaDock app updates.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Runtime updates are independent from LlamaDock app updates."
+                )
+                .settingsCaption()
             }
+        }
+    }
 
-            Section("Hugging Face") {
-                LabeledContent("Access Token") {
+    private var huggingFaceSettings: some View {
+        settingsForm {
+            Section("Access Token") {
+                LabeledContent("Status") {
                     Label(
                         appModel.isHuggingFaceTokenConfigured
-                            ? "Configured"
-                            : "Not configured",
-                        systemImage: appModel
-                            .isHuggingFaceTokenConfigured
-                            ? "checkmark.shield.fill"
-                            : "lock"
+                            ? localized("Configured")
+                            : localized("Not configured"),
+                        systemImage:
+                            appModel.isHuggingFaceTokenConfigured
+                                ? "checkmark.shield.fill"
+                                : "lock"
                     )
                     .foregroundStyle(
                         appModel.isHuggingFaceTokenConfigured
@@ -119,16 +233,17 @@ struct SettingsView: View {
 
                 SecureField(
                     appModel.isHuggingFaceTokenConfigured
-                        ? "Enter a replacement token"
-                        : "hf_…",
+                        ? localized("Enter a replacement token")
+                        : localized("hf_…"),
                     text: $huggingFaceToken
                 )
+                .accessibilityLabel("Hugging Face access token")
 
                 HStack {
                     Button(
                         appModel.isHuggingFaceTokenConfigured
-                            ? "Replace Token"
-                            : "Save Token"
+                            ? localized("Replace Token")
+                            : localized("Save Token")
                     ) {
                         if appModel.saveHuggingFaceToken(
                             huggingFaceToken
@@ -146,33 +261,28 @@ struct SettingsView: View {
                         appModel.deleteHuggingFaceToken()
                         huggingFaceToken = ""
                     }
-                    .disabled(
-                        !appModel.isHuggingFaceTokenConfigured
-                    )
+                    .disabled(!appModel.isHuggingFaceTokenConfigured)
                 }
 
                 Text(
                     "Stored as a generic password in macOS Keychain. The value is never written to settings, UserDefaults, or logs."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsCaption()
 
                 if let error = appModel.huggingFaceCredentialError {
-                    Label(
-                        error,
-                        systemImage: "exclamationmark.triangle.fill"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .textSelection(.enabled)
+                    InlineNotice(error)
                 }
             }
+        }
+    }
 
-            Section("Diagnostics") {
+    private var diagnosticsSettings: some View {
+        settingsForm {
+            Section("Redacted Diagnostics") {
                 Button(
                     diagnosticsCopied
-                        ? "Diagnostics Copied"
-                        : "Copy Redacted Diagnostics",
+                        ? localized("Diagnostics Copied")
+                        : localized("Copy Redacted Diagnostics"),
                     systemImage: diagnosticsCopied
                         ? "checkmark"
                         : "doc.on.doc"
@@ -188,25 +298,67 @@ struct SettingsView: View {
                 Text(
                     "Includes versions, hardware, runtime/model/profile/download summaries, server state, and update status. Credentials, signed URL queries, prompts, launch arguments, and server log contents are excluded."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsCaption()
             }
+        }
+    }
 
-            Section("About") {
-                LabeledContent("Product", value: "LlamaDock")
-                LabeledContent(
-                    "Version",
-                    value:
-                        "\(appModel.appVersion) (\(appModel.appBuild))"
-                )
-            }
+    private var aboutSettings: some View {
+        VStack(spacing: 18) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 96, height: 96)
+                .accessibilityLabel("LlamaDock app icon")
+
+            Text("LlamaDock")
+                .font(.title.bold())
+            Text(
+                "Version \(appModel.appVersion) (\(appModel.appBuild))"
+            )
+            .foregroundStyle(.secondary)
+
+            Text(
+                "A native macOS control plane for transparent, external llama.cpp runtimes and local GGUF models."
+            )
+            .multilineTextAlignment(.center)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: 380)
+
+            Spacer()
+        }
+        .padding(32)
+    }
+
+    private func settingsForm<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Form {
+            content()
         }
         .formStyle(.grouped)
-        .frame(width: 520)
         .padding()
-        .task {
-            appModel.refreshHuggingFaceTokenState()
+    }
+
+    private func applyDockAppearance() {
+        let policy: NSApplication.ActivationPolicy =
+            showDockIcon ? .regular : .accessory
+        if NSApp.activationPolicy() != policy {
+            NSApp.setActivationPolicy(policy)
         }
+    }
+
+    private func localized(
+        _ value: String.LocalizationValue
+    ) -> String {
+        appLocalizedString(value, locale: locale)
+    }
+}
+
+private extension View {
+    func settingsCaption() -> some View {
+        font(.caption)
+            .foregroundStyle(.secondary)
     }
 }
 

@@ -259,7 +259,10 @@ struct ServerProcessControllerTests {
             )
         }
         #expect(await launcher.recordedInvocations().isEmpty)
-        #expect(await controller.snapshot().state == .stopped)
+        #expect(
+            await controller.snapshot().state
+                == .failed(reason: reason)
+        )
     }
 
     @Test("publishes metrics only for the owned process")

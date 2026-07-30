@@ -7,60 +7,121 @@ struct LlamadockApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self)
     private var appDelegate
     @State private var appModel = AppModel()
+    @AppStorage(AppLanguage.storageKey)
+    private var appLanguage = AppLanguage.system
+    @AppStorage(AppAppearance.showMenuBarIconKey)
+    private var showMenuBarIcon = true
+    @AppStorage(AppAppearance.showDockIconKey)
+    private var showDockIcon = true
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             ContentView()
                 .environment(appModel)
+                .environment(\.locale, appLanguage.locale)
                 .task {
                     appDelegate.shutdownOwnedServer = {
                         await appModel.shutdown()
                     }
+                    appDelegate.setDockIconVisible(showDockIcon)
                     await appModel.bootstrap()
+                }
+                .onChange(of: showDockIcon) {
+                    appDelegate.setDockIconVisible(showDockIcon)
+                }
+                .onChange(of: showMenuBarIcon) {
+                    if !showMenuBarIcon && !showDockIcon {
+                        showDockIcon = true
+                    }
                 }
         }
         .defaultSize(width: 1_080, height: 720)
         .commands {
-            LlamaDockCommands(appModel: appModel)
+            LlamaDockCommands(
+                appModel: appModel,
+                locale: appLanguage.locale
+            )
         }
 
         Settings {
             SettingsView()
                 .environment(appModel)
+                .environment(\.locale, appLanguage.locale)
         }
+
+        MenuBarExtra(
+            isInserted: $showMenuBarIcon
+        ) {
+            ServiceMenuBarView()
+                .environment(appModel)
+                .environment(\.locale, appLanguage.locale)
+        } label: {
+            Label {
+                Text("LlamaDock")
+            } icon: {
+                Image(
+                    systemName:
+                        appModel.serviceStatus.menuBarSystemImage
+                )
+            }
+            .accessibilityLabel(
+                Text(
+                    "LlamaDock server \(appModel.serviceStatus.localizedString(locale: appLanguage.locale))"
+                )
+            )
+        }
+        .menuBarExtraStyle(.menu)
     }
 }
 
 @MainActor
 private struct LlamaDockCommands: Commands {
     let appModel: AppModel
+    let locale: Locale
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("Open GGUF Model…") {
+            Button(localized("Open GGUF Model…")) {
                 openModel()
             }
             .keyboardShortcut("o", modifiers: [.command])
         }
 
-        CommandMenu("Navigate") {
-            Button("Overview") {
+        CommandMenu(localized("Navigate")) {
+            Button(localized("Overview")) {
                 appModel.selectedSection = .overview
             }
             .keyboardShortcut("1", modifiers: [.command])
 
-            Button("Runtimes") {
-                appModel.selectedSection = .runtimes
+            Button(localized("Service")) {
+                appModel.selectedSection = .service
             }
             .keyboardShortcut("2", modifiers: [.command])
 
-            Button("Models") {
-                appModel.selectedSection = .models
+            Button(localized("Logs")) {
+                appModel.selectedSection = .logs
             }
             .keyboardShortcut("3", modifiers: [.command])
 
-            Button("Server Logs") {
-                appModel.selectedSection = .servers
+            Button(localized("Models")) {
+                appModel.selectedSection = .models
+            }
+            .keyboardShortcut("4", modifiers: [.command])
+
+            Button(localized("Downloads")) {
+                appModel.selectedSection = .downloads
+            }
+            .keyboardShortcut("5", modifiers: [.command])
+
+            Button(localized("Runtime")) {
+                appModel.selectedSection = .runtimes
+            }
+            .keyboardShortcut("6", modifiers: [.command])
+
+            Divider()
+
+            Button(localized("Server Logs")) {
+                appModel.selectedSection = .logs
             }
             .keyboardShortcut(
                 "l",
@@ -68,8 +129,8 @@ private struct LlamaDockCommands: Commands {
             )
         }
 
-        CommandMenu("Server") {
-            Button("Start Server") {
+        CommandMenu(localized("Server")) {
+            Button(localized("Start Server")) {
                 Task {
                     await appModel.startServer()
                 }
@@ -77,7 +138,7 @@ private struct LlamaDockCommands: Commands {
             .keyboardShortcut("r", modifiers: [.command])
             .disabled(!appModel.canStartServer)
 
-            Button("Stop Server") {
+            Button(localized("Stop Server")) {
                 Task {
                     await appModel.stopServer()
                 }
@@ -85,7 +146,7 @@ private struct LlamaDockCommands: Commands {
             .keyboardShortcut(".", modifiers: [.command])
             .disabled(!appModel.canStopServer)
 
-            Button("Restart Server") {
+            Button(localized("Restart Server")) {
                 Task {
                     await appModel.restartServer()
                 }
@@ -100,11 +161,11 @@ private struct LlamaDockCommands: Commands {
 
     private func openModel() {
         let panel = NSOpenPanel()
-        panel.title = "Open a GGUF Model"
-        panel.message = """
+        panel.title = localized("Open a GGUF Model")
+        panel.message = localized("""
             This creates a profile for one file. Add its folder separately \
             if you want it restored in the model library.
-            """
+            """)
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
@@ -117,5 +178,11 @@ private struct LlamaDockCommands: Commands {
         }
         appModel.selectedSection = .models
         appModel.selectModel(url)
+    }
+
+    private func localized(
+        _ value: String.LocalizationValue
+    ) -> String {
+        appLocalizedString(value, locale: locale)
     }
 }

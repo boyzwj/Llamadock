@@ -70,6 +70,7 @@ final class AppModel {
         run: nil,
         logs: []
     )
+    var serverFailureMessage: String?
     var isBootstrapping = false
     var isRefreshingRuntimes = false
     var isCheckingRuntimeUpdates = false
@@ -116,7 +117,7 @@ final class AppModel {
 
     init(
         runtimeDiscovery: RuntimeCandidateDiscovery = RuntimeCandidateDiscovery(),
-        runtimeProbe: RuntimeProbe = RuntimeProbe(timeoutSeconds: 30),
+        runtimeProbe: RuntimeProbe = RuntimeProbe(timeoutSeconds: 5),
         serverController: ServerProcessController = ServerProcessController(),
         userDefaults: UserDefaults = .standard,
         applicationDirectories: ApplicationDirectories? = nil,
@@ -258,10 +259,10 @@ final class AppModel {
             )
             beginModelDownloadMonitor()
         } catch {
-            modelDownloadError = """
+            modelDownloadError = localized("""
                 Could not restore model downloads: \
                 \(error.localizedDescription)
-                """
+                """)
         }
         await refreshRuntimes()
 
@@ -292,7 +293,9 @@ final class AppModel {
                 selectNewProfile: selectedProfileID == nil
             )
         } catch {
-            visibleError = "Could not restore profiles: \(error.localizedDescription)"
+            visibleError = localized(
+                "Could not restore profiles: \(error.localizedDescription)"
+            )
         }
 
         await refreshModels()
@@ -314,6 +317,9 @@ final class AppModel {
     }
 
     func refreshRuntimes() async {
+        guard !isRefreshingRuntimes else {
+            return
+        }
         isRefreshingRuntimes = true
         defer { isRefreshingRuntimes = false }
 
@@ -329,10 +335,10 @@ final class AppModel {
                 previousRuntimeID: nil
             )
             managedRuntimeSnapshot = registrySnapshot
-            visibleError = """
+            visibleError = localized("""
                 Could not read the managed runtime registry: \
                 \(error.localizedDescription)
-                """
+                """)
         }
 
         let candidates = runtimeDiscovery.discover(
@@ -365,8 +371,23 @@ final class AppModel {
                     capabilities: capabilities
                 )
             )
+
+            publishRuntimeProbeResults(
+                reports: reports,
+                validRuntimes: validRuntimes
+            )
         }
 
+        publishRuntimeProbeResults(
+            reports: reports,
+            validRuntimes: validRuntimes
+        )
+    }
+
+    private func publishRuntimeProbeResults(
+        reports: [RuntimeProbeReport],
+        validRuntimes: [RuntimeInstallation]
+    ) {
         runtimeReports = reports
         runtimes = validRuntimes
         if
@@ -402,10 +423,10 @@ final class AppModel {
                 forKey: "lastManagedRuntimeUpdateCheck"
             )
         } catch {
-            let message = """
+            let message = localized("""
                 Could not check the latest llama.cpp runtime: \
                 \(error.localizedDescription)
-                """
+                """)
             runtimeUpdateError = message
             if reportErrors {
                 visibleError = message
@@ -434,10 +455,10 @@ final class AppModel {
                 forKey: "lastAppUpdateCheck"
             )
         } catch {
-            let message = """
+            let message = localized("""
                 Could not check for a LlamaDock app update: \
                 \(error.localizedDescription)
-                """
+                """)
             appUpdateError = message
             if reportErrors {
                 visibleError = message
@@ -447,10 +468,10 @@ final class AppModel {
 
     func installLatestRuntime() async {
         guard canChangeManagedRuntime else {
-            visibleError = """
+            visibleError = localized("""
                 Stop the LlamaDock server before installing and activating \
                 a managed runtime.
-                """
+                """)
             return
         }
         guard !isInstallingRuntime else {
@@ -475,18 +496,18 @@ final class AppModel {
         } catch {
             runtimeInstallSnapshot = await managedRuntimeInstaller
                 .snapshot()
-            visibleError = """
+            visibleError = localized("""
                 Managed runtime installation failed: \
                 \(error.localizedDescription)
-                """
+                """)
         }
     }
 
     func activateSelectedManagedRuntime() async {
         guard canChangeManagedRuntime else {
-            visibleError = """
+            visibleError = localized("""
                 Stop the LlamaDock server before switching runtimes.
-                """
+                """)
             return
         }
         guard
@@ -495,7 +516,9 @@ final class AppModel {
                 where: { $0.id == id }
             )
         else {
-            visibleError = "Choose an installed managed runtime first."
+            visibleError = localized(
+                "Choose an installed managed runtime first."
+            )
             return
         }
 
@@ -506,18 +529,18 @@ final class AppModel {
             await refreshRuntimes()
             selectRuntime(id)
         } catch {
-            visibleError = """
+            visibleError = localized("""
                 Could not activate the managed runtime: \
                 \(error.localizedDescription)
-                """
+                """)
         }
     }
 
     func rollbackManagedRuntime() async {
         guard canChangeManagedRuntime else {
-            visibleError = """
+            visibleError = localized("""
                 Stop the LlamaDock server before rolling back runtimes.
-                """
+                """)
             return
         }
 
@@ -529,10 +552,9 @@ final class AppModel {
             await refreshRuntimes()
             selectRuntime(snapshot.activeRuntimeID)
         } catch {
-            visibleError = """
-                Could not roll back the managed runtime: \
-                \(error.localizedDescription)
-            """
+            visibleError = localized(
+                "Could not roll back the managed runtime: \(error.localizedDescription)"
+            )
         }
     }
 
@@ -548,7 +570,9 @@ final class AppModel {
         guard managedRuntimeSnapshot.installations.contains(
             where: { $0.id == id }
         ) else {
-            visibleError = "The selected managed runtime is no longer installed."
+            visibleError = localized(
+                "The selected managed runtime is no longer installed."
+            )
             return
         }
 
@@ -561,10 +585,10 @@ final class AppModel {
             )
             await refreshRuntimes()
         } catch {
-            visibleError = """
+            visibleError = localized("""
                 Could not delete the managed runtime: \
                 \(error.localizedDescription)
-                """
+                """)
         }
     }
 
@@ -592,6 +616,7 @@ final class AppModel {
     }
 
     func selectRuntime(_ id: String?) {
+        clearServerFailure()
         let validatedID = id.flatMap { requestedID in
             runtimes.contains(where: { $0.id == requestedID })
                 ? requestedID
@@ -613,10 +638,11 @@ final class AppModel {
     func selectModel(_ url: URL) {
         let standardizedURL = url.standardizedFileURL
         guard standardizedURL.pathExtension.lowercased() == "gguf" else {
-            visibleError = "Choose a .gguf model file."
+            visibleError = localized("Choose a .gguf model file.")
             return
         }
 
+        clearServerFailure()
         selectedModelURL = standardizedURL
         selectedLibraryModelID = modelScanSnapshot?.models.first(
             where: { $0.url == standardizedURL }
@@ -700,10 +726,10 @@ final class AppModel {
                 selectedLibraryModelID = snapshot.models.first?.id
             }
         } catch {
-            visibleError = """
+            visibleError = localized("""
                 Could not refresh the local model library: \
                 \(error.localizedDescription)
-                """
+                """)
         }
     }
 
@@ -714,10 +740,10 @@ final class AppModel {
             _ = try await modelDirectoryStore.addDirectory(url)
             await refreshModels()
         } catch {
-            visibleError = """
+            visibleError = localized("""
                 Could not add the model directory: \
                 \(error.localizedDescription)
-                """
+                """)
         }
     }
 
@@ -730,10 +756,10 @@ final class AppModel {
             )
             await refreshModels()
         } catch {
-            visibleError = """
+            visibleError = localized("""
                 Could not remove the model directory: \
                 \(error.localizedDescription)
-                """
+                """)
         }
     }
 
@@ -750,7 +776,9 @@ final class AppModel {
         guard let model = localModels.first(
             where: { $0.id == id }
         ) else {
-            visibleError = "The selected model is no longer in the library."
+            visibleError = localized(
+                "The selected model is no longer in the library."
+            )
             return
         }
 
@@ -764,10 +792,10 @@ final class AppModel {
                 protectedModelURLs: serverModelURLs
             )
         } catch {
-            visibleError = """
+            visibleError = localized("""
                 Could not prepare the model for Trash: \
                 \(error.localizedDescription)
-                """
+                """)
             return
         }
 
@@ -802,10 +830,10 @@ final class AppModel {
             await refreshModels()
             refreshCommandPreview()
         } catch {
-            visibleError = """
+            visibleError = localized("""
                 Could not move the model to Trash: \
                 \(error.localizedDescription)
-                """
+                """)
         }
     }
 
@@ -1025,9 +1053,9 @@ final class AppModel {
             artifact.role == .main,
             artifact.isComplete
         else {
-            modelDownloadError = """
+            modelDownloadError = localized("""
                 Choose a complete main GGUF artifact to download.
-                """
+                """)
             return
         }
         if
@@ -1038,10 +1066,10 @@ final class AppModel {
             ),
             !isHuggingFaceTokenConfigured
         {
-            modelDownloadError = """
+            modelDownloadError = localized("""
                 Add a Hugging Face token in Settings before downloading \
                 this restricted repository.
-                """
+                """)
             return
         }
         modelDownloadError = nil
@@ -1108,17 +1136,17 @@ final class AppModel {
         for model: LocalModelFile
     ) {
         guard model.validation == .valid else {
-            visibleError = """
+            visibleError = localized("""
                 This GGUF file is invalid and cannot be used to create \
                 a launch profile.
-                """
+                """)
             return
         }
         guard model.role == .main else {
-            visibleError = """
+            visibleError = localized("""
                 Choose a main model. Companion and auxiliary GGUF files \
                 are attached from a profile.
-                """
+                """)
             return
         }
         selectModel(model.url)
@@ -1141,6 +1169,7 @@ final class AppModel {
         else {
             return
         }
+        clearServerFailure()
         selectedProfileID = id
         selectedModelURL = URL(
             filePath: selected.model.mainPath,
@@ -1186,7 +1215,9 @@ final class AppModel {
             let run = serverSnapshot.run,
             run.profileID == selected.id
         {
-            visibleError = "Stop the server before deleting its profile."
+            visibleError = localized(
+                "Stop the server before deleting its profile."
+            )
             return
         }
 
@@ -1207,10 +1238,10 @@ final class AppModel {
                 refreshCommandPreview()
             }
         } catch {
-            visibleError = """
+            visibleError = localized("""
                 Could not delete the profile: \
                 \(error.localizedDescription)
-                """
+                """)
         }
     }
 
@@ -1231,10 +1262,10 @@ final class AppModel {
             profiles.append(imported)
             selectProfile(imported.id)
         } catch {
-            visibleError = """
+            visibleError = localized("""
                 Could not import the profile: \
                 \(error.localizedDescription)
-                """
+                """)
         }
     }
 
@@ -1262,10 +1293,10 @@ final class AppModel {
             }
             try data.write(to: url, options: .atomic)
         } catch {
-            visibleError = """
+            visibleError = localized("""
                 Could not export the profile: \
                 \(error.localizedDescription)
-                """
+                """)
         }
     }
 
@@ -1289,6 +1320,7 @@ final class AppModel {
         guard var profile else {
             return
         }
+        clearServerFailure()
         mutation(&profile)
         profile.updatedAt = Date()
         self.profile = profile
@@ -1301,32 +1333,37 @@ final class AppModel {
         guard !isServerOperationInProgress else {
             return
         }
+        clearServerFailure()
         guard !isTrashingModel else {
-            visibleError = """
+            visibleError = localized("""
                 Wait for the model Trash operation to finish before \
                 starting a server.
-                """
+                """)
             return
         }
         guard !isManagedRuntimeOperationInProgress else {
-            visibleError = """
+            visibleError = localized("""
                 Wait for the managed runtime operation to finish before \
                 starting a server.
-                """
+                """)
             return
         }
         guard let runtime = selectedRuntime else {
-            visibleError = "Choose a validated llama.cpp runtime first."
+            visibleError = localized(
+                "Choose a validated llama.cpp runtime first."
+            )
             return
         }
         guard let profile else {
-            visibleError = "Choose a GGUF model first."
+            visibleError = localized("Choose a GGUF model first.")
             return
         }
         beginServerModelSecurityScope(for: profile)
         guard FileManager.default.fileExists(atPath: profile.model.mainPath) else {
             endServerModelSecurityScope()
-            visibleError = "The selected GGUF model no longer exists."
+            visibleError = localized(
+                "The selected GGUF model no longer exists."
+            )
             return
         }
 
@@ -1338,7 +1375,9 @@ final class AppModel {
             )
         } catch {
             endServerModelSecurityScope()
-            visibleError = "Cannot build launch command: \(error)"
+            visibleError = localized(
+                "Cannot build launch command: \(String(describing: error))"
+            )
             return
         }
 
@@ -1361,43 +1400,78 @@ final class AppModel {
             persist(usedProfile)
         } catch {
             endServerModelSecurityScope()
-            visibleError = "Could not start llama-server: \(error.localizedDescription)"
+            let message = serverStartFailureMessage(for: error)
+            serverFailureMessage = message
+            visibleError = message
         }
         serverSnapshot = await serverController.snapshot()
     }
 
     var canStartServer: Bool {
-        guard
-            !isServerOperationInProgress,
-            !isManagedRuntimeOperationInProgress,
-            !isTrashingModel,
-            selectedRuntime != nil,
-            profile != nil
-        else {
-            return false
-        }
-        switch serverSnapshot.state {
-        case .stopped, .failed:
-            return true
-        case .starting, .ready, .degraded, .stopping:
-            return false
-        }
+        serviceControls.canStart
     }
 
     var canStopServer: Bool {
-        switch serverSnapshot.state {
-        case .starting, .ready, .degraded:
-            return true
-        case .stopped, .failed, .stopping:
-            return false
-        }
+        serviceControls.canStop
     }
 
     var canRestartServer: Bool {
-        canStopServer
-            && !isTrashingModel
-            && !isManagedRuntimeOperationInProgress
-            && !isServerOperationInProgress
+        serviceControls.canRestart
+    }
+
+    var serviceStatus: ServiceStatusKind {
+        serviceControls.status
+    }
+
+    var serviceControls: ServiceControlState {
+        ServiceControlState(
+            serverState: serverSnapshot.state,
+            hasRuntime: selectedRuntime != nil,
+            hasProfile: profile != nil,
+            modelIsAvailable: profile.map {
+                FileManager.default.fileExists(
+                    atPath: $0.model.mainPath
+                )
+            } ?? false,
+            serverOperationInProgress:
+                isServerOperationInProgress,
+            runtimeOperationInProgress:
+                isRefreshingRuntimes
+                    || isManagedRuntimeOperationInProgress,
+            modelOperationInProgress: isTrashingModel
+        )
+    }
+
+    var startServerBlockReason: String? {
+        guard let blocker = serviceControls.startBlocker else {
+            return nil
+        }
+        switch blocker {
+        case .serverBusy:
+            return localized(
+                "Wait for the current server operation to finish."
+            )
+        case .runtimeBusy:
+            return localized(
+                "Wait for the current runtime operation to finish."
+            )
+        case .modelBusy:
+            return localized(
+                "Wait for the current model operation to finish."
+            )
+        case .missingRuntime:
+            return localized(
+                "Choose a validated llama.cpp runtime first."
+            )
+        case .missingProfile:
+            return localized("Choose a GGUF model first.")
+        case .missingModel:
+            return localized(
+                "The selected GGUF model no longer exists."
+            )
+        case .alreadyRunning:
+            return localized("The server is already running.")
+        }
     }
 
     func stopServer() async {
@@ -1405,18 +1479,24 @@ final class AppModel {
         defer { isServerOperationInProgress = false }
 
         await serverController.stop()
+        serverFailureMessage = nil
         endServerModelSecurityScope()
         serverSnapshot = await serverController.snapshot()
         serverMonitorTask?.cancel()
         serverMonitorTask = nil
     }
 
+    func clearServerLogs() async {
+        await serverController.clearLogs()
+        serverSnapshot = await serverController.snapshot()
+    }
+
     func restartServer() async {
         guard canRestartServer else {
-            visibleError = """
+            visibleError = localized("""
                 Wait for the current model or runtime operation to finish \
                 before restarting the server.
-                """
+                """)
             return
         }
         await stopServer()
@@ -1455,16 +1535,22 @@ final class AppModel {
         _ model: LocalModelFile
     ) -> String? {
         if isTrashingModel || isRefreshingModels {
-            return "Wait for the current model operation to finish."
+            return localized(
+                "Wait for the current model operation to finish."
+            )
         }
         if isServerOperationInProgress {
-            return "Wait for the current server operation to finish."
+            return localized(
+                "Wait for the current server operation to finish."
+            )
         }
         let modelPath = canonicalPath(model.url.path)
         if serverModelURLs.contains(
             where: { canonicalPath($0.path) == modelPath }
         ) {
-            return "A running LlamaDock server is using this model."
+            return localized(
+                "A running LlamaDock server is using this model."
+            )
         }
         return nil
     }
@@ -1802,10 +1888,10 @@ final class AppModel {
             }
             return true
         } catch {
-            modelDownloadError = """
+            modelDownloadError = localized("""
                 Model import completed, but its launch profile could not \
                 be created: \(error.localizedDescription)
-                """
+                """)
             return false
         }
     }
@@ -1817,18 +1903,21 @@ final class AppModel {
     }
 
     var canChangeManagedRuntime: Bool {
-        guard
-            !isServerOperationInProgress,
-            !isManagedRuntimeOperationInProgress
-        else {
-            return false
-        }
-        return switch serverSnapshot.state {
-        case .stopped, .failed:
-            true
-        case .starting, .ready, .degraded, .stopping:
-            false
-        }
+        managedRuntimeControls.canChange
+    }
+
+    private var managedRuntimeControls:
+        ManagedRuntimeControlState
+    {
+        ManagedRuntimeControlState(
+            serverState: serverSnapshot.state,
+            isBootstrapping: isBootstrapping,
+            isRefreshing: isRefreshingRuntimes,
+            runtimeOperationInProgress:
+                isManagedRuntimeOperationInProgress,
+            serverOperationInProgress:
+                isServerOperationInProgress
+        )
     }
 
     var selectedManagedRuntimeID: String? {
@@ -1858,24 +1947,32 @@ final class AppModel {
 
     var selectedManagedRuntimeRemovalBlockReason: String? {
         guard let id = selectedManagedRuntimeID else {
-            return "Choose an installed managed runtime first."
+            return localized(
+                "Choose an installed managed runtime first."
+            )
         }
         if isManagedRuntimeOperationInProgress {
-            return "Wait for the current runtime operation to finish."
+            return localized(
+                "Wait for the current runtime operation to finish."
+            )
         }
         if isServerOperationInProgress {
-            return "Wait for the current server operation to finish."
+            return localized(
+                "Wait for the current server operation to finish."
+            )
         }
         if managedRuntimeSnapshot.activeRuntimeID == id {
-            return "The active runtime cannot be deleted."
+            return localized("The active runtime cannot be deleted.")
         }
         if managedRuntimeSnapshot.previousRuntimeID == id {
-            return """
+            return localized("""
                 The previous runtime is retained for one-click rollback.
-                """
+                """)
         }
         if runtimeIDsInUse.contains(id) {
-            return "A running LlamaDock server is using this runtime."
+            return localized(
+                "A running LlamaDock server is using this runtime."
+            )
         }
         return nil
     }
@@ -2260,6 +2357,41 @@ final class AppModel {
         }
     }
 
+    private func serverStartFailureMessage(
+        for error: Error
+    ) -> String {
+        if
+            let processError = error as? ServerProcessError,
+            case .endpointUnavailable(
+                let host,
+                let port,
+                _
+            ) = processError
+        {
+            return localized(
+                "Port \(host):\(String(port)) is already in use. Choose another port or stop the process using it."
+            )
+        }
+        return localized(
+            "Could not start llama-server: \(error.localizedDescription)"
+        )
+    }
+
+    private func clearServerFailure() {
+        serverFailureMessage = nil
+        guard
+            case .failed = serverSnapshot.state,
+            serverSnapshot.run == nil
+        else {
+            return
+        }
+        serverSnapshot = ServerSnapshot(
+            state: .stopped,
+            run: nil,
+            logs: serverSnapshot.logs
+        )
+    }
+
     private func persist(_ profile: LaunchProfile) {
         Task { [weak self] in
             guard let self else {
@@ -2268,7 +2400,9 @@ final class AppModel {
             do {
                 try await self.profileStore.save(profile)
             } catch {
-                self.visibleError = "Could not save profile: \(error.localizedDescription)"
+                self.visibleError = self.localized(
+                    "Could not save profile: \(error.localizedDescription)"
+                )
             }
         }
     }
@@ -2332,10 +2466,10 @@ final class AppModel {
                     )
                 }
             } catch {
-                runtimeUpdateError = """
+                runtimeUpdateError = localized("""
                     Could not read the cached llama.cpp release: \
                     \(error.localizedDescription)
-                    """
+                    """)
             }
             return
         }
@@ -2503,5 +2637,14 @@ final class AppModel {
             || candidate.hasPrefix(
                 root.hasSuffix("/") ? root : root + "/"
             )
+    }
+
+    private func localized(
+        _ value: String.LocalizationValue
+    ) -> String {
+        let language = userDefaults.string(
+            forKey: AppLanguage.storageKey
+        ).flatMap(AppLanguage.init(rawValue:)) ?? .system
+        return appLocalizedString(value, locale: language.locale)
     }
 }

@@ -4,6 +4,11 @@ import Testing
 
 @Suite("Launch profile coding")
 struct LaunchProfileCodingTests {
+    @Test("uses an app-specific high port by default")
+    func usesAppSpecificDefaultPort() {
+        #expect(ServerOptions().port == 39_281)
+    }
+
     @Test("round-trips the readable versioned schema")
     func roundTripsSchema() throws {
         let profile = makeProfile()

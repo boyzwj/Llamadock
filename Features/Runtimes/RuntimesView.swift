@@ -4,6 +4,7 @@ import SwiftUI
 
 struct RuntimesView: View {
     @Environment(AppModel.self) private var appModel
+    @Environment(\.locale) private var locale
     @State private var pendingRuntimeRemoval:
         ManagedRuntimeRecord?
 
@@ -11,6 +12,20 @@ struct RuntimesView: View {
         @Bindable var appModel = appModel
 
         VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Runtime")
+                        .font(.largeTitle.bold())
+                    Text(
+                        "Install, activate, update, and roll back llama.cpp"
+                    )
+                    .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, LlamaDockLayout.pagePadding)
+            .padding(.vertical, 14)
+
             managedRuntimePanel
             Divider()
 
@@ -33,22 +48,19 @@ struct RuntimesView: View {
                     )
                 } else {
                     List(selection: $appModel.selectedRuntimeID) {
-                        ForEach(
-                            appModel.runtimeReports,
-                            id: \.candidate.id
-                        ) { report in
-                            RuntimeReportRow(
-                                report: report,
-                                isActive: appModel
-                                    .managedRuntimeSnapshot
-                                    .activeRuntimeID
-                                    == report.candidate.id,
-                                isPrevious: appModel
-                                    .managedRuntimeSnapshot
-                                    .previousRuntimeID
-                                    == report.candidate.id
-                            )
-                            .tag(report.candidate.id)
+                        if let activeReport {
+                            Section("Current Active") {
+                                runtimeRow(activeReport)
+                            }
+                        }
+
+                        Section("Installed and Discovered") {
+                            ForEach(
+                                inactiveReports,
+                                id: \.candidate.id
+                            ) { report in
+                                runtimeRow(report)
+                            }
                         }
                     }
                     .onChange(of: appModel.selectedRuntimeID) {
@@ -221,8 +233,8 @@ struct RuntimesView: View {
 
                 Button(
                     appModel.isLatestManagedRuntimeInstalled
-                        ? "Latest Installed"
-                        : "Install & Activate"
+                        ? localized("Latest Installed")
+                        : localized("Install & Activate")
                 ) {
                     Task {
                         await appModel.installLatestRuntime()
@@ -259,31 +271,75 @@ struct RuntimesView: View {
                         || !appModel.canChangeManagedRuntime
                 )
 
-                Button(role: .destructive) {
-                    pendingRuntimeRemoval =
-                        appModel.selectedManagedRuntimeRecord
-                } label: {
-                    Label(
-                        "Delete Selected",
-                        systemImage: "trash"
-                    )
-                }
-                .disabled(
-                    !appModel.canRemoveSelectedManagedRuntime
-                )
-                .help(
-                    appModel
-                        .selectedManagedRuntimeRemovalBlockReason
-                        ?? """
-                        Permanently delete this inactive managed runtime.
-                        """
-                )
-
                 Spacer()
             }
         }
         .padding(16)
         .background(.background.secondary)
+    }
+
+    private var activeReport: RuntimeProbeReport? {
+        guard
+            let activeID =
+                appModel.managedRuntimeSnapshot.activeRuntimeID
+        else {
+            return nil
+        }
+        return appModel.runtimeReports.first {
+            $0.candidate.id == activeID
+        }
+    }
+
+    private var inactiveReports: [RuntimeProbeReport] {
+        guard let activeReport else {
+            return appModel.runtimeReports
+        }
+        return appModel.runtimeReports.filter {
+            $0.candidate.id != activeReport.candidate.id
+        }
+    }
+
+    private func runtimeRow(
+        _ report: RuntimeProbeReport
+    ) -> some View {
+        RuntimeReportRow(
+            report: report,
+            isActive:
+                appModel.managedRuntimeSnapshot.activeRuntimeID
+                    == report.candidate.id,
+            isPrevious:
+                appModel.managedRuntimeSnapshot.previousRuntimeID
+                    == report.candidate.id
+        )
+        .tag(report.candidate.id)
+        .contextMenu {
+            if
+                let record =
+                    appModel.managedRuntimeSnapshot
+                    .installations
+                    .first(
+                        where: {
+                            $0.id == report.candidate.id
+                        }
+                    )
+            {
+                Button(
+                    "Delete \(record.tag)",
+                    systemImage: "trash",
+                    role: .destructive
+                ) {
+                    appModel.selectRuntime(record.id)
+                    pendingRuntimeRemoval = record
+                }
+                .disabled(
+                    appModel.managedRuntimeSnapshot.activeRuntimeID
+                        == record.id
+                        || appModel.managedRuntimeSnapshot
+                            .previousRuntimeID == record.id
+                        || !appModel.canChangeManagedRuntime
+                )
+            }
+        }
     }
 
     private var managedRuntimeSummary: String {
@@ -295,8 +351,10 @@ struct RuntimesView: View {
             )
         else {
             return snapshot.installations.isEmpty
-                ? "No managed runtime installed"
-                : "\(snapshot.installations.count) installed, none active"
+                ? localized("No managed runtime installed")
+                : localized(
+                    "\(snapshot.installations.count) managed runtimes installed, none active"
+                )
         }
 
         if
@@ -305,15 +363,13 @@ struct RuntimesView: View {
                 where: { $0.id == previousID }
             )
         {
-            return """
-                Active \(active.tag) · Previous \(previous.tag) · \
-                \(snapshot.installations.count) installed
-                """
+            return localized(
+                "Active \(active.tag) · Previous \(previous.tag) · \(snapshot.installations.count) managed runtimes installed"
+            )
         }
-        return """
-            Active \(active.tag) · \
-            \(snapshot.installations.count) installed
-            """
+        return localized(
+            "Active \(active.tag) · \(snapshot.installations.count) managed runtimes installed"
+        )
     }
 
     private var installStateIsFailure: Bool {
@@ -328,25 +384,25 @@ struct RuntimesView: View {
     ) -> String {
         switch state {
         case .idle:
-            "Ready to install"
+            localized("Ready to install")
         case .fetchingRelease:
-            "Fetching the latest official release…"
+            localized("Fetching the latest official release…")
         case .downloading(let tag):
-            "Downloading \(tag)…"
+            localized("Downloading \(tag)…")
         case .verifyingArchive:
-            "Verifying archive size and checksum…"
+            localized("Verifying archive size and checksum…")
         case .extracting:
-            "Safely extracting the archive…"
+            localized("Safely extracting the archive…")
         case .validatingBinaries:
-            "Validating architecture and binaries…"
+            localized("Validating architecture and binaries…")
         case .registering:
-            "Registering the managed runtime…"
+            localized("Registering the managed runtime…")
         case .activating:
-            "Activating the managed runtime…"
+            localized("Activating the managed runtime…")
         case .ready(let record):
-            "\(record.tag) installed and ready"
+            localized("\(record.tag) installed and ready")
         case .failed(let stage, let reason):
-            "Failed during \(stage.rawValue): \(reason)"
+            localized("Failed during \(stage.rawValue): \(reason)")
         }
     }
 
@@ -355,11 +411,11 @@ struct RuntimesView: View {
     ) -> String {
         switch source {
         case .network:
-            "from GitHub"
+            localized("from GitHub")
         case .notModifiedCache:
-            "validated cache"
+            localized("validated cache")
         case .staleCache:
-            "offline cache"
+            localized("offline cache")
         }
     }
 
@@ -383,10 +439,10 @@ struct RuntimesView: View {
 
     private func chooseCustomRuntime() {
         let panel = NSOpenPanel()
-        panel.title = "Choose llama-server or llama"
-        panel.message = """
+        panel.title = localized("Choose llama-server or llama")
+        panel.message = localized("""
             LlamaDock will inspect this executable but never overwrite it.
-            """
+            """)
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
@@ -399,12 +455,19 @@ struct RuntimesView: View {
             await appModel.addCustomRuntime(url)
         }
     }
+
+    private func localized(
+        _ value: String.LocalizationValue
+    ) -> String {
+        appLocalizedString(value, locale: locale)
+    }
 }
 
 private struct RuntimeReportRow: View {
     let report: RuntimeProbeReport
     let isActive: Bool
     let isPrevious: Bool
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -450,7 +513,10 @@ private struct RuntimeReportRow: View {
 
             Text(
                 report.candidate.serverURL?.path
-                    ?? "llama-server executable missing"
+                    ?? appLocalizedString(
+                        "llama-server executable missing",
+                        locale: locale
+                    )
             )
             .font(.system(.caption, design: .monospaced))
             .foregroundStyle(.secondary)
@@ -459,8 +525,14 @@ private struct RuntimeReportRow: View {
             if let capabilities = report.capabilities {
                 Text(
                     capabilities.detection == .detected
-                        ? "\(capabilities.supportedFlags.count) flags detected"
-                        : "Capabilities unknown"
+                        ? appLocalizedString(
+                            "\(capabilities.supportedFlags.count) flags detected",
+                            locale: locale
+                        )
+                        : appLocalizedString(
+                            "Capabilities unknown",
+                            locale: locale
+                        )
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -506,13 +578,13 @@ private struct RuntimeReportRow: View {
     private var sourceTitle: String {
         switch report.candidate.source {
         case .managed:
-            "Managed"
+            appLocalizedString("Managed", locale: locale)
         case .officialInstaller:
-            "Official Installer"
+            appLocalizedString("Official Installer", locale: locale)
         case .homebrew:
             "Homebrew"
         case .custom:
-            "Custom"
+            appLocalizedString("Custom", locale: locale)
         }
     }
 

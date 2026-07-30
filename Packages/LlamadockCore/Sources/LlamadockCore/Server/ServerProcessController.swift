@@ -126,6 +126,10 @@ public actor ServerProcessController {
         )
     }
 
+    public func clearLogs() {
+        logBuffer.removeAll()
+    }
+
     public func start(
         profileID: UUID,
         runtimeID: String,
@@ -153,6 +157,7 @@ public actor ServerProcessController {
             host: host,
             port: port
         ) {
+            state = .failed(reason: reason)
             throw ServerProcessError.endpointUnavailable(
                 host: host,
                 port: port,

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct HuggingFaceModelsView: View {
     @Environment(AppModel.self) private var appModel
+    @Environment(\.locale) private var locale
     @State private var query = ""
 
     var body: some View {
@@ -18,9 +19,16 @@ struct HuggingFaceModelsView: View {
             } else {
                 HSplitView {
                     repositoryList
-                        .frame(minWidth: 300, idealWidth: 360)
+                        .frame(
+                            minWidth: ModelBrowserSplitLayout.listMinWidth,
+                            idealWidth: ModelBrowserSplitLayout.listIdealWidth,
+                            maxWidth: ModelBrowserSplitLayout.listMaxWidth
+                        )
                     repositoryDetail
-                        .frame(minWidth: 500)
+                        .frame(
+                            minWidth: ModelBrowserSplitLayout.detailMinWidth,
+                            maxWidth: .infinity
+                        )
                 }
             }
         }
@@ -173,11 +181,15 @@ struct HuggingFaceModelsView: View {
                         artifactCatalog(catalog)
                     }
 
-                    if
-                        !appModel.modelDownloadSnapshot.jobs
-                            .isEmpty
-                    {
-                        downloadQueue
+                    if !appModel.modelDownloadSnapshot.jobs.isEmpty {
+                        Button {
+                            appModel.selectedSection = .downloads
+                        } label: {
+                            Label(
+                                "Open Download Queue",
+                                systemImage: "arrow.down.circle"
+                            )
+                        }
                     }
                 }
                 .padding(22)
@@ -256,8 +268,12 @@ struct HuggingFaceModelsView: View {
         Label {
             Text(
                 appModel.isHuggingFaceTokenConfigured
-                    ? "A Keychain token was used for this Hub request. Repository access still depends on the token owner's accepted terms and permissions."
-                    : "This repository requires a Hugging Face token with access. Add one in Settings; LlamaDock has not sent any credentials."
+                    ? localized(
+                        "A Keychain token was used for this Hub request. Repository access still depends on the token owner's accepted terms and permissions."
+                    )
+                    : localized(
+                        "This repository requires a Hugging Face token with access. Add one in Settings; LlamaDock has not sent any credentials."
+                    )
             )
         } icon: {
             Image(systemName: "lock.trianglebadge.exclamationmark")
@@ -376,8 +392,12 @@ struct HuggingFaceModelsView: View {
                     .disabled(!artifact.isComplete)
                     .help(
                         artifact.isComplete
-                            ? "Include this companion in the atomic download and generated Profile."
-                            : "This split companion is incomplete and cannot be selected."
+                            ? localized(
+                                "Include this companion in the atomic download and generated Profile."
+                            )
+                            : localized(
+                                "This split companion is incomplete and cannot be selected."
+                            )
                     )
                 }
             }
@@ -403,7 +423,7 @@ struct HuggingFaceModelsView: View {
                 Text(artifact.displayName)
                     .lineLimit(1)
                 HStack(spacing: 6) {
-                    Text(artifact.role.title)
+                    Text(artifact.role.localizedTitle(locale: locale))
                     if let quantization = artifact.quantization {
                         Text("•")
                         Text(quantization)
@@ -422,7 +442,9 @@ struct HuggingFaceModelsView: View {
             Spacer()
 
             Label(
-                artifact.isComplete ? "Complete" : "Incomplete",
+                artifact.isComplete
+                    ? localized("Complete")
+                    : localized("Incomplete"),
                 systemImage: artifact.isComplete
                     ? "checkmark.circle.fill"
                     : "exclamationmark.triangle.fill"
@@ -461,7 +483,7 @@ struct HuggingFaceModelsView: View {
                     VStack(alignment: .leading, spacing: 7) {
                         HStack {
                             Label(
-                                artifact.role.title,
+                                artifact.role.localizedTitle(locale: locale),
                                 systemImage: artifact.role.icon
                             )
                             .font(.caption.bold())
@@ -523,8 +545,12 @@ struct HuggingFaceModelsView: View {
                     artifacts.allSatisfy(
                         \.expectedSHA256Coverage
                     )
-                        ? "Every file declares a Hub LFS SHA-256 digest; all files also receive bounded GGUF structure validation."
-                        : "Files without a Hub SHA-256 digest still receive exact-size and bounded GGUF structure validation before import.",
+                        ? localized(
+                            "Every file declares a Hub LFS SHA-256 digest; all files also receive bounded GGUF structure validation."
+                        )
+                        : localized(
+                            "Files without a Hub SHA-256 digest still receive exact-size and bounded GGUF structure validation before import."
+                        ),
                     systemImage: artifacts.allSatisfy(
                         \.expectedSHA256Coverage
                     )
@@ -553,8 +579,8 @@ struct HuggingFaceModelsView: View {
             Button(
                 appModel.selectedHuggingFaceCompanionArtifacts
                     .isEmpty
-                    ? "Download to Local Library"
-                    : "Download Model and Companions",
+                    ? localized("Download to Local Library")
+                    : localized("Download Model and Companions"),
                 systemImage: "arrow.down.circle"
             ) {
                 Task {
@@ -583,8 +609,12 @@ struct HuggingFaceModelsView: View {
             )
             .help(
                 artifact.role == .main
-                    ? "Download, verify, and import this artifact without overwriting existing files."
-                    : "Choose a main artifact. Companion selection is managed with its main model."
+                    ? localized(
+                        "Download, verify, and import this artifact without overwriting existing files."
+                    )
+                    : localized(
+                        "Choose a main artifact. Companion selection is managed with its main model."
+                    )
             )
         }
     }
@@ -605,7 +635,7 @@ struct HuggingFaceModelsView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Text(job.state.title)
+                            Text(job.state.localizedTitle(locale: locale))
                                 .font(.caption.bold())
                                 .foregroundStyle(
                                     job.state.tint
@@ -710,10 +740,9 @@ struct HuggingFaceModelsView: View {
     private func byteCount(
         _ value: Int64
     ) -> String {
-        ByteCountFormatter.string(
-            fromByteCount: value,
-            countStyle: .file
-        )
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: value)
     }
 
     private func downloadProgressAccessibilityValue(
@@ -723,12 +752,21 @@ struct HuggingFaceModelsView: View {
         let percentage = Int(
             (progress * 100).rounded()
         )
-        return "\(percentage) percent, \(job.state.title)"
+        return localized(
+            "\(percentage) percent, \(job.state.localizedTitle(locale: locale))"
+        )
+    }
+
+    private func localized(
+        _ value: String.LocalizationValue
+    ) -> String {
+        appLocalizedString(value, locale: locale)
     }
 }
 
 private struct HuggingFaceRepositoryRow: View {
     let repository: HuggingFaceRepository
+    @Environment(\.locale) private var locale
 
     var body: some View {
         HStack(spacing: 10) {
@@ -748,8 +786,18 @@ private struct HuggingFaceRepositoryRow: View {
             .accessibilityLabel(
                 repository.gated.requiresAuthentication
                     || repository.isPrivate
-                    ? "Restricted repository"
-                    : "Public repository"
+                    ? Text(
+                        appLocalizedString(
+                            "Restricted repository",
+                            locale: locale
+                        )
+                    )
+                    : Text(
+                        appLocalizedString(
+                            "Public repository",
+                            locale: locale
+                        )
+                    )
             )
 
             VStack(alignment: .leading, spacing: 3) {
@@ -774,14 +822,14 @@ private struct HuggingFaceRepositoryRow: View {
 }
 
 private extension HuggingFaceGGUFRole {
-    var title: String {
+    func localizedTitle(locale: Locale) -> String {
         switch self {
         case .main:
-            "Main"
+            appLocalizedString("Main", locale: locale)
         case .mmproj:
-            "Vision Projector"
+            appLocalizedString("Vision Projector", locale: locale)
         case .draft:
-            "Draft"
+            appLocalizedString("Draft", locale: locale)
         }
     }
 
@@ -806,26 +854,26 @@ private extension HuggingFaceGGUFArtifact {
 }
 
 private extension ModelDownloadState {
-    var title: String {
+    func localizedTitle(locale: Locale) -> String {
         switch self {
         case .queued:
-            "Queued"
+            appLocalizedString("Queued", locale: locale)
         case .resolving:
-            "Resolving"
+            appLocalizedString("Resolving", locale: locale)
         case .downloading:
-            "Downloading"
+            appLocalizedString("Downloading", locale: locale)
         case .paused:
-            "Paused"
+            appLocalizedString("Paused", locale: locale)
         case .verifying:
-            "Verifying"
+            appLocalizedString("Verifying", locale: locale)
         case .importing:
-            "Importing"
+            appLocalizedString("Importing", locale: locale)
         case .completed:
-            "Completed"
+            appLocalizedString("Completed", locale: locale)
         case .failed:
-            "Failed"
+            appLocalizedString("Failed", locale: locale)
         case .cancelled:
-            "Cancelled"
+            appLocalizedString("Cancelled", locale: locale)
         }
     }
 

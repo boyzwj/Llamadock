@@ -35,6 +35,8 @@ public struct RuntimeSelection: Codable, Equatable, Sendable {
 }
 
 public struct ServerOptions: Codable, Equatable, Sendable {
+    public static let defaultPort: UInt16 = 39_281
+
     public var alias: String?
     public var host: String
     public var port: UInt16
@@ -52,7 +54,7 @@ public struct ServerOptions: Codable, Equatable, Sendable {
     public init(
         alias: String? = nil,
         host: String = "127.0.0.1",
-        port: UInt16 = 8_080,
+        port: UInt16 = ServerOptions.defaultPort,
         contextSize: Int? = nil,
         gpuLayers: Int? = nil,
         threads: Int? = nil,

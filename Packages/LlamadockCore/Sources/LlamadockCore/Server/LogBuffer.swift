@@ -6,11 +6,25 @@ public enum LogSource: String, Codable, Sendable {
     case system
 }
 
+public enum ServerLogSeverity: Int, Codable, Sendable {
+    case debug
+    case info
+    case warning
+    case error
+}
+
 public struct LogEvent: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let timestamp: Date
     public let source: LogSource
     public let message: String
+
+    public var inferredSeverity: ServerLogSeverity? {
+        message
+            .split(whereSeparator: \.isNewline)
+            .compactMap(Self.inferredSeverity(from:))
+            .max { $0.rawValue < $1.rawValue }
+    }
 
     public init(
         id: UUID = UUID(),
@@ -22,6 +36,47 @@ public struct LogEvent: Codable, Equatable, Identifiable, Sendable {
         self.timestamp = timestamp
         self.source = source
         self.message = message
+    }
+
+    private static func inferredSeverity(
+        from line: Substring
+    ) -> ServerLogSeverity? {
+        let fields = line.split(
+            maxSplits: 2,
+            whereSeparator: \.isWhitespace
+        )
+        guard
+            fields.count >= 2,
+            isElapsedTimestamp(fields[0])
+        else {
+            return nil
+        }
+
+        switch fields[1] {
+        case "D":
+            return .debug
+        case "I":
+            return .info
+        case "W":
+            return .warning
+        case "E":
+            return .error
+        default:
+            return nil
+        }
+    }
+
+    private static func isElapsedTimestamp(
+        _ field: Substring
+    ) -> Bool {
+        let components = field.split(
+            separator: ".",
+            omittingEmptySubsequences: false
+        )
+        return components.count == 4
+            && components.allSatisfy {
+                !$0.isEmpty && Int($0) != nil
+            }
     }
 }
 

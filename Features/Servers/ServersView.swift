@@ -4,225 +4,288 @@ import SwiftUI
 
 struct ServersView: View {
     @Environment(AppModel.self) private var appModel
+    @Environment(\.locale) private var locale
 
     var body: some View {
-        VStack(spacing: 0) {
-            serverHeader
-                .padding(24)
+        LlamaDockPage {
+            LlamaDockPageHeader(
+                "Service",
+                subtitle: "Profile, endpoint, launch command, and lifecycle"
+            )
 
-            Divider()
-
-            if appModel.serverSnapshot.logs.isEmpty {
-                ContentUnavailableView(
-                    "No Server Logs",
-                    systemImage: "text.alignleft",
-                    description: Text(
-                        "stdout and stderr from the owned llama-server process will appear here."
-                    )
-                )
-            } else {
-                logView
+            if let failure = appModel.serverFailureMessage {
+                InlineNotice(failure, tone: .failed) {
+                    recoveryAction
+                }
             }
-        }
-        .navigationTitle("Servers")
-        .toolbar {
-            ToolbarItemGroup {
-                Button("Start", systemImage: "play.fill") {
+
+            ServiceHeroCard(
+                status: appModel.serviceStatus,
+                detail: serviceDescription,
+                runtime: runtimeSummary,
+                endpoint: endpoint,
+                isOperationInProgress:
+                    appModel.isServerOperationInProgress,
+                canStart: appModel.canStartServer,
+                canStop: appModel.canStopServer,
+                canRestart: appModel.canRestartServer,
+                startHelp: appModel.startServerBlockReason,
+                start: {
                     Task { await appModel.startServer() }
-                }
-                .disabled(!appModel.canStartServer)
-
-                Button("Stop", systemImage: "stop.fill") {
+                },
+                stop: {
                     Task { await appModel.stopServer() }
-                }
-                .disabled(!appModel.canStopServer)
-
-                Button("Restart", systemImage: "arrow.clockwise") {
+                },
+                restart: {
                     Task { await appModel.restartServer() }
                 }
-                .disabled(!appModel.canRestartServer)
-            }
+            )
+
+            endpointActions
+            profileConfiguration
+            launchCommand
         }
-    }
-
-    private var serverHeader: some View {
-        HStack(alignment: .top, spacing: 20) {
-            Image(systemName: stateSystemImage)
-                .font(.system(size: 32))
-                .foregroundStyle(stateColor)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(stateTitle)
-                    .font(.title2.bold())
-
-                if let run = appModel.serverSnapshot.run {
-                    LabeledContent("PID", value: String(run.processIdentifier))
-                    LabeledContent("API Base URL") {
-                        Text(run.baseURL.appending(path: "v1").absoluteString)
-                            .textSelection(.enabled)
-                    }
-                    LabeledContent("Runtime", value: run.runtimeID)
-
-                    serverMetrics(for: run)
-
-                    HStack {
-                        Button("Open WebUI", systemImage: "safari") {
-                            NSWorkspace.shared.open(run.baseURL)
-                        }
-                        .disabled(
-                            appModel.serverSnapshot.state != .ready
-                                && !isDegraded
-                        )
-
-                        Button("Copy API URL", systemImage: "doc.on.doc") {
-                            copy(
-                                run.baseURL.appending(path: "v1").absoluteString
-                            )
-                        }
-
-                        Button("Copy Launch Command", systemImage: "terminal") {
-                            copy(run.command.displayCommand)
-                        }
-                    }
-                } else {
-                    Text(
-                        "Choose a validated runtime and a local GGUF model before starting."
-                    )
-                    .foregroundStyle(.secondary)
-                }
-            }
-
-            Spacer()
-
-            if appModel.isServerOperationInProgress {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel("Server operation in progress")
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Owned server status")
+        .navigationTitle("Service")
     }
 
     @ViewBuilder
-    private func serverMetrics(
-        for run: ServerRun
-    ) -> some View {
-        if let metrics = appModel.serverSnapshot.metrics {
-            HStack(spacing: 24) {
-                LabeledContent(
-                    "CPU",
-                    value: metrics.cpuPercent.map {
-                        String(format: "%.1f%%", $0)
-                    } ?? "Sampling"
-                )
-                LabeledContent(
-                    "Memory",
-                    value: formattedBytes(
-                        metrics.residentMemoryBytes
-                    )
-                )
-                LabeledContent(
-                    "Threads",
-                    value: String(metrics.threadCount)
-                )
-                LabeledContent(
-                    "Uptime",
-                    value: formattedUptime(
-                        since: run.processStartTime
-                    )
-                )
+    private var recoveryAction: some View {
+        if appModel.selectedRuntime == nil {
+            Button("Open Runtime") {
+                appModel.selectedSection = .runtimes
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Server performance")
+        } else if appModel.profile == nil {
+            Button("Open Models") {
+                appModel.selectedSection = .models
+            }
+        } else {
+            Button("Review Profile") {
+                appModel.selectedSection = .models
+            }
         }
     }
 
-    private var logView: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 3) {
-                ForEach(appModel.serverSnapshot.logs) { event in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(event.timestamp, format: .dateTime
-                            .hour()
-                            .minute()
-                            .second()
-                        )
-                        .foregroundStyle(.tertiary)
-
-                        Text(event.source == .standardError ? "ERR" : "OUT")
-                            .foregroundStyle(
-                                event.source == .standardError
-                                    ? .orange
-                                    : .secondary
+    private var endpointActions: some View {
+        SectionCard {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("API Endpoint")
+                        .font(.headline)
+                    Text(
+                        endpoint
+                            ?? localized(
+                                "Available after the service starts."
                             )
+                    )
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                }
 
-                        Text(event.message)
-                            .textSelection(.enabled)
+                Spacer()
+
+                Button("Open WebUI", systemImage: "safari") {
+                    if
+                        let url =
+                            appModel.serverSnapshot.run?.baseURL
+                    {
+                        NSWorkspace.shared.open(url)
                     }
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .disabled(!appModel.serviceStatus.isReachable)
+                .help(
+                    appModel.serviceStatus.isReachable
+                        ? localized("Open the built-in llama-server WebUI.")
+                        : localized(
+                            "The WebUI is available when the service is ready."
+                        )
+                )
+
+                Button(
+                    "Copy API URL",
+                    systemImage: "doc.on.doc"
+                ) {
+                    if let endpoint {
+                        copy(endpoint)
+                    }
+                }
+                .disabled(endpoint == nil)
+            }
+        }
+    }
+
+    private var profileConfiguration: some View {
+        SectionCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("Launch Profile")
+                        .font(.title2.bold())
+                    Spacer()
+                    Button("Edit Profile") {
+                        appModel.selectedSection = .models
+                    }
+                }
+
+                if let profile = appModel.profile {
+                    Grid(
+                        alignment: .leading,
+                        horizontalSpacing: 24,
+                        verticalSpacing: 10
+                    ) {
+                        row("Profile", profile.name)
+                        row(
+                            "Model",
+                            URL(filePath: profile.model.mainPath)
+                                .lastPathComponent
+                        )
+                        row(
+                            "Runtime",
+                            runtimeSummary
+                        )
+                        row(
+                            "Host",
+                            profile.server.host
+                        )
+                        row(
+                            "Port",
+                            String(profile.server.port)
+                        )
+                        row(
+                            "Context",
+                            profile.server.contextSize?
+                                .formatted()
+                                ?? localized("Runtime default")
+                        )
+                        row(
+                            "GPU Layers",
+                            profile.server.gpuLayers?
+                                .formatted()
+                                ?? localized("Runtime default")
+                        )
+                    }
+                } else {
+                    EmptyStateAction(
+                        title: "No Launch Profile",
+                        description:
+                            "Choose a valid local GGUF model to create a launch profile.",
+                        systemImage: "doc.badge.plus",
+                        actionTitle: "Open Models"
+                    ) {
+                        appModel.selectedSection = .models
+                    }
                 }
             }
-            .padding(16)
         }
-        .background(.black.opacity(0.03))
-        .accessibilityLabel("Server log")
     }
 
-    private var stateTitle: String {
+    private var launchCommand: some View {
+        SectionCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Generated Command")
+                        .font(.title2.bold())
+                    Spacer()
+                    if let command = appModel.commandPreview {
+                        Button(
+                            "Copy Command",
+                            systemImage: "doc.on.doc"
+                        ) {
+                            copy(command)
+                        }
+                    }
+                }
+
+                if let command = appModel.commandPreview {
+                    Text(command)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                        .fixedSize(
+                            horizontal: false,
+                            vertical: true
+                        )
+                } else {
+                    Label(
+                        appModel.commandError
+                            ?? localized(
+                                "Choose a validated runtime and launch profile."
+                            ),
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .foregroundStyle(.orange)
+                }
+
+                HStack {
+                    Button("View Logs", systemImage: "text.alignleft") {
+                        appModel.selectedSection = .logs
+                    }
+                    Spacer()
+                    Text(
+                        "Arguments are passed directly to llama-server without a shell."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var endpoint: String? {
+        appModel.serverSnapshot.run?
+            .baseURL
+            .appending(path: "v1")
+            .absoluteString
+    }
+
+    private var runtimeSummary: String {
+        guard let runtime = appModel.selectedRuntime else {
+            return localized("Runtime not configured")
+        }
+        return runtime.versionOutput
+            .split(separator: "\n")
+            .first
+            .map(String.init)
+            ?? runtime.source.rawValue
+    }
+
+    private var serviceDescription: String {
+        if let failure = appModel.serverFailureMessage {
+            return failure
+        }
         switch appModel.serverSnapshot.state {
         case .stopped:
-            "Stopped"
+            return appModel.startServerBlockReason
+                ?? localized(
+                    "Runtime and profile are ready to start."
+                )
         case .starting:
-            "Starting"
+            return localized(
+                "Waiting for the health endpoint to become ready."
+            )
         case .ready:
-            "Ready"
+            return localized(
+                "The local API and WebUI are ready."
+            )
         case .degraded(let reason):
-            "Degraded — \(reason)"
+            return localized("Health check degraded: \(reason)")
         case .failed(let reason):
-            "Failed — \(reason)"
+            return localized("The service failed: \(reason)")
         case .stopping:
-            "Stopping"
+            return localized(
+                "Stopping the owned llama-server process."
+            )
         }
     }
 
-    private var stateSystemImage: String {
-        switch appModel.serverSnapshot.state {
-        case .stopped:
-            "stop.circle"
-        case .starting, .stopping:
-            "clock.arrow.circlepath"
-        case .ready:
-            "checkmark.circle.fill"
-        case .degraded:
-            "exclamationmark.triangle.fill"
-        case .failed:
-            "xmark.circle.fill"
+    private func row(
+        _ title: LocalizedStringKey,
+        _ value: String
+    ) -> some View {
+        GridRow {
+            Text(title)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .textSelection(.enabled)
         }
-    }
-
-    private var stateColor: Color {
-        switch appModel.serverSnapshot.state {
-        case .stopped:
-            .secondary
-        case .starting, .stopping:
-            .blue
-        case .ready:
-            .green
-        case .degraded:
-            .orange
-        case .failed:
-            .red
-        }
-    }
-
-    private var isDegraded: Bool {
-        if case .degraded = appModel.serverSnapshot.state {
-            return true
-        }
-        return false
     }
 
     private func copy(_ value: String) {
@@ -230,36 +293,10 @@ struct ServersView: View {
         NSPasteboard.general.setString(value, forType: .string)
     }
 
-    private func formattedBytes(_ bytes: UInt64) -> String {
-        ByteCountFormatter.string(
-            fromByteCount: Int64(
-                min(bytes, UInt64(Int64.max))
-            ),
-            countStyle: .memory
-        )
-    }
-
-    private func formattedUptime(since start: Date) -> String {
-        let totalSeconds = max(
-            Int(Date().timeIntervalSince(start)),
-            0
-        )
-        let hours = totalSeconds / 3_600
-        let minutes = (totalSeconds % 3_600) / 60
-        let seconds = totalSeconds % 60
-        if hours > 0 {
-            return String(
-                format: "%d:%02d:%02d",
-                hours,
-                minutes,
-                seconds
-            )
-        }
-        return String(
-            format: "%d:%02d",
-            minutes,
-            seconds
-        )
+    private func localized(
+        _ value: String.LocalizationValue
+    ) -> String {
+        appLocalizedString(value, locale: locale)
     }
 }
 
