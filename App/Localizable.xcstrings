@@ -746,6 +746,16 @@
         }
       }
     },
+    "Changelog" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新日志"
+          }
+        }
+      }
+    },
     "Chat template" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2414,6 +2424,16 @@
         }
       }
     },
+    "Loading release details…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在加载发布详情…"
+          }
+        }
+      }
+    },
     "Local GGUF library and Hugging Face" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2680,6 +2700,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新建"
+          }
+        }
+      }
+    },
+    "No changelog was provided for this release." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此版本未提供更新日志。"
           }
         }
       }
@@ -3314,6 +3344,16 @@
         }
       }
     },
+    "Published" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发布时间"
+          }
+        }
+      }
+    },
     "Reading repository file tree…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3380,6 +3420,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在注册托管运行时…"
+          }
+        }
+      }
+    },
+    "Release details unavailable" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发布详情不可用"
           }
         }
       }
@@ -4669,6 +4719,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "查看日志"
+          }
+        }
+      }
+    },
+    "View on GitHub" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 上查看"
           }
         }
       }

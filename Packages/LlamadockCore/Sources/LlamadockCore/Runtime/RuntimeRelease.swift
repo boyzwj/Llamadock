@@ -55,6 +55,36 @@ public struct LlamaBuildTag: Codable, Equatable, Sendable {
         self.tag = tag
         self.build = build
     }
+
+    public init?(
+        parsingVersionOutput output: String
+    ) {
+        for line in output.split(whereSeparator: \.isNewline) {
+            let trimmed = line.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            guard
+                trimmed.lowercased().hasPrefix("version:")
+            else {
+                continue
+            }
+
+            let value = trimmed.dropFirst("version:".count)
+                .drop(while: \.isWhitespace)
+            let digits = value.prefix(while: \.isNumber)
+            guard
+                !digits.isEmpty,
+                let parsed = try? Self(
+                    parsing: "b\(digits)"
+                )
+            else {
+                return nil
+            }
+            self = parsed
+            return
+        }
+        return nil
+    }
 }
 
 public struct GitHubRuntimeReleaseAsset: Codable, Equatable, Sendable {

@@ -34,6 +34,10 @@ validates its structure and binaries, registers it atomically, and switches the
 active managed runtime only after validation. Existing managed versions remain
 available for **Roll Back**. Runtime updates never update the LlamaDock App.
 
+Each recognized llama.cpp build displays its GitHub publication time and an
+expandable changelog. Release details are cached by build tag after the first
+successful lookup, so previously loaded details remain available offline.
+
 Stop a running server before switching or installing a runtime.
 
 To reclaim storage, select an older managed release and choose **Delete

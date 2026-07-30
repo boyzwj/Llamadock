@@ -34,6 +34,13 @@ struct ApplicationDirectoriesTests {
                 )
         )
         #expect(
+            directories.runtimeReleaseDetailsCache
+                == root.appending(
+                    path: "cache/github/runtime-releases",
+                    directoryHint: .isDirectory
+                )
+        )
+        #expect(
             directories.settings
                 == root.appending(
                     path: "settings.json",

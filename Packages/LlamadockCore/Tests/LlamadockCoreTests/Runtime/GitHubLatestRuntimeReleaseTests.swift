@@ -16,6 +16,22 @@ struct GitHubLatestRuntimeReleaseTests {
         #expect(throws: RuntimeReleaseError.invalidTag("b0")) {
             try LlamaBuildTag(parsing: "b0")
         }
+        #expect(
+            LlamaBuildTag(
+                parsingVersionOutput: """
+                    version: 10176 (f5b9bd39b)
+                    built for Darwin arm64
+                    """
+            ) == LlamaBuildTag(
+                tag: "b10176",
+                build: 10_176
+            )
+        )
+        #expect(
+            LlamaBuildTag(
+                parsingVersionOutput: "llama.cpp build 10176"
+            ) == nil
+        )
     }
 
     @Test("selects the official macOS arm64 archive")

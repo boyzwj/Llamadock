@@ -321,14 +321,27 @@ struct RuntimesView: View {
     private func runtimeRow(
         _ report: RuntimeProbeReport
     ) -> some View {
-        RuntimeReportRow(
+        let releaseTag = appModel.runtimeReleaseTagByRuntimeID[
+            report.candidate.id
+        ]
+        return RuntimeReportRow(
             report: report,
             isActive:
                 appModel.managedRuntimeSnapshot.activeRuntimeID
                     == report.candidate.id,
             isPrevious:
                 appModel.managedRuntimeSnapshot.previousRuntimeID
-                    == report.candidate.id
+                    == report.candidate.id,
+            releaseDetails: releaseTag.flatMap {
+                appModel.runtimeReleaseDetailsByTag[$0]
+            },
+            isLoadingReleaseDetails: releaseTag.map {
+                appModel.runtimeReleaseDetailsLoadingTags
+                    .contains($0)
+            } ?? false,
+            releaseDetailsError: releaseTag.flatMap {
+                appModel.runtimeReleaseDetailsErrorsByTag[$0]
+            }
         )
         .tag(report.candidate.id)
         .contextMenu {
@@ -486,7 +499,11 @@ private struct RuntimeReportRow: View {
     let report: RuntimeProbeReport
     let isActive: Bool
     let isPrevious: Bool
+    let releaseDetails: RuntimeReleaseDetails?
+    let isLoadingReleaseDetails: Bool
+    let releaseDetailsError: String?
     @Environment(\.locale) private var locale
+    @State private var isChangelogExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -557,6 +574,8 @@ private struct RuntimeReportRow: View {
                 .foregroundStyle(.secondary)
             }
 
+            releaseDetailsView
+
             if let warning = report.warning {
                 Label(
                     warning,
@@ -579,6 +598,87 @@ private struct RuntimeReportRow: View {
             minHeight: 88,
             alignment: .topLeading
         )
+    }
+
+    @ViewBuilder
+    private var releaseDetailsView: some View {
+        if let releaseDetails {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Label(
+                        "Published",
+                        systemImage: "calendar"
+                    )
+                    Text(
+                        releaseDetails.publishedAt,
+                        format: .dateTime
+                            .year()
+                            .month()
+                            .day()
+                            .hour()
+                            .minute()
+                    )
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                Button {
+                    isChangelogExpanded.toggle()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(
+                            systemName: isChangelogExpanded
+                                ? "chevron.down"
+                                : "chevron.right"
+                        )
+                        .font(.caption2.bold())
+                        Text("Changelog")
+                            .font(.caption.bold())
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if isChangelogExpanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(
+                            releaseDetails.changelog
+                                ?? appLocalizedString(
+                                    "No changelog was provided for this release.",
+                                    locale: locale
+                                )
+                        )
+                        .font(.caption)
+                        .textSelection(.enabled)
+
+                        Link(
+                            "View on GitHub",
+                            destination:
+                                releaseDetails.releasePageURL
+                        )
+                        .font(.caption)
+                    }
+                    .padding(.top, 4)
+                }
+            }
+        } else if isLoadingReleaseDetails {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text("Loading release details…")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else if let releaseDetailsError {
+            Label(
+                "Release details unavailable",
+                systemImage: "exclamationmark.triangle"
+            )
+            .font(.caption)
+            .foregroundStyle(.orange)
+            .help(releaseDetailsError)
+        }
     }
 
     @ViewBuilder

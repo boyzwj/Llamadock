@@ -14,6 +14,11 @@ final class AppModel {
         activeRuntimeID: nil,
         previousRuntimeID: nil
     )
+    var runtimeReleaseTagByRuntimeID: [String: String] = [:]
+    var runtimeReleaseDetailsByTag:
+        [String: RuntimeReleaseDetails] = [:]
+    var runtimeReleaseDetailsLoadingTags: Set<String> = []
+    var runtimeReleaseDetailsErrorsByTag: [String: String] = [:]
     var latestRuntimeRelease: RuntimeReleaseCheck?
     var runtimeUpdateError: String?
     var appUpdateCheck: AppUpdateCheck?
@@ -88,6 +93,8 @@ final class AppModel {
     private let managedRuntimeRegistry: any ManagedRuntimeRegistering
     private let runtimeReleaseCache: any RuntimeReleaseCaching
     private let runtimeReleaseChecker: any RuntimeReleaseChecking
+    private let runtimeReleaseDetailsFetcher:
+        any RuntimeReleaseDetailsFetching
     private let appReleaseChecker: any AppReleaseChecking
     private let managedRuntimeInstaller: ManagedRuntimeInstaller
     private let profileStore: JSONProfileStore
@@ -108,6 +115,8 @@ final class AppModel {
     private var didBootstrap = false
     private var serverMonitorTask: Task<Void, Never>?
     private var runtimeInstallMonitorTask: Task<Void, Never>?
+    private var runtimeReleaseDetailsTasks:
+        [String: Task<Void, Never>] = [:]
     private var modelDownloadMonitorTask: Task<Void, Never>?
     private var modelDirectoryMonitorTask: Task<Void, Never>?
     private var monitoredModelDirectoryPaths: [String] = []
@@ -129,6 +138,9 @@ final class AppModel {
         )? = nil,
         runtimeReleaseCache: (
             any RuntimeReleaseCaching
+        )? = nil,
+        runtimeReleaseDetailsFetcher: (
+            any RuntimeReleaseDetailsFetching
         )? = nil,
         appReleaseChecker: (
             any AppReleaseChecking
@@ -225,6 +237,14 @@ final class AppModel {
             )
         }
         self.runtimeReleaseChecker = releaseChecker
+        self.runtimeReleaseDetailsFetcher =
+            runtimeReleaseDetailsFetcher
+            ?? GitHubRuntimeReleaseDetailsClient(
+                cache: JSONRuntimeReleaseDetailsCache(
+                    directory:
+                        directories.runtimeReleaseDetailsCache
+                )
+            )
         self.appReleaseChecker = appReleaseChecker
             ?? GitHubAppReleaseChecker()
         self.managedRuntimeInstaller = managedRuntimeInstaller
@@ -382,6 +402,7 @@ final class AppModel {
             reports: reports,
             validRuntimes: validRuntimes
         )
+        refreshRuntimeReleaseDetails(for: reports)
     }
 
     private func publishRuntimeProbeResults(
@@ -401,6 +422,77 @@ final class AppModel {
             )
         }
         refreshCommandPreview()
+    }
+
+    private func refreshRuntimeReleaseDetails(
+        for reports: [RuntimeProbeReport]
+    ) {
+        let managedTags = Dictionary(
+            uniqueKeysWithValues:
+                managedRuntimeSnapshot.installations.map {
+                    ($0.id, $0.tag)
+                }
+        )
+        var tagByRuntimeID: [String: String] = [:]
+        for report in reports {
+            if let managedTag = managedTags[
+                report.candidate.id
+            ] {
+                tagByRuntimeID[report.candidate.id] =
+                    managedTag
+                continue
+            }
+            guard
+                let versionOutput =
+                    report.serverVersionOutput,
+                let tag = LlamaBuildTag(
+                    parsingVersionOutput: versionOutput
+                )
+            else {
+                continue
+            }
+            tagByRuntimeID[report.candidate.id] = tag.tag
+        }
+        runtimeReleaseTagByRuntimeID = tagByRuntimeID
+
+        for tagValue in Set(tagByRuntimeID.values) {
+            guard
+                runtimeReleaseDetailsByTag[tagValue] == nil,
+                runtimeReleaseDetailsTasks[tagValue] == nil,
+                let tag = try? LlamaBuildTag(
+                    parsing: tagValue
+                )
+            else {
+                continue
+            }
+
+            runtimeReleaseDetailsLoadingTags.insert(tagValue)
+            runtimeReleaseDetailsErrorsByTag[tagValue] = nil
+            let fetcher = runtimeReleaseDetailsFetcher
+            runtimeReleaseDetailsTasks[tagValue] = Task {
+                do {
+                    let details = try await fetcher.details(
+                        for: tag,
+                        now: Date()
+                    )
+                    guard !Task.isCancelled else {
+                        return
+                    }
+                    runtimeReleaseDetailsByTag[tagValue] =
+                        details
+                } catch {
+                    guard !Task.isCancelled else {
+                        return
+                    }
+                    runtimeReleaseDetailsErrorsByTag[tagValue] =
+                        error.localizedDescription
+                }
+                runtimeReleaseDetailsLoadingTags.remove(
+                    tagValue
+                )
+                runtimeReleaseDetailsTasks[tagValue] = nil
+            }
+        }
     }
 
     func checkRuntimeUpdates(

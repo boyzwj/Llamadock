@@ -68,6 +68,13 @@ public struct ApplicationDirectories: Sendable {
         )
     }
 
+    public var runtimeReleaseDetailsCache: URL {
+        githubCache.appending(
+            path: "runtime-releases",
+            directoryHint: .isDirectory
+        )
+    }
+
     public var settings: URL {
         root.appending(
             path: "settings.json",
