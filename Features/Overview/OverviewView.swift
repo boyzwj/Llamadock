@@ -212,9 +212,7 @@ struct OverviewView: View {
                     )
                     configurationRow(
                         "Host / Port",
-                        appModel.profile.map {
-                            "\($0.server.host):\($0.server.port)"
-                        } ?? localized("Not configured")
+                        "\(appModel.serviceHost):\(appModel.servicePort)"
                     )
                 }
 

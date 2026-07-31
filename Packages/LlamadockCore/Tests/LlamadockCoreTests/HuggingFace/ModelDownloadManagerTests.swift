@@ -91,6 +91,70 @@ struct ModelDownloadManagerTests {
         )
     }
 
+    @Test("routes ModelScope jobs without Hugging Face credentials")
+    func routesModelScopeDownload() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directories = ApplicationDirectories(root: root)
+        let payload = minimalGGUF(name: "modelscope")
+        let transport = FixtureModelDownloadTransport(
+            payloads: [payload]
+        )
+        let manager = ModelDownloadManager(
+            directories: directories,
+            transport: transport,
+            urlResolver: StaticHuggingFaceFileURLResolver(
+                url: URL(string: "http://should-not-be-used.invalid")!
+            ),
+            modelScopeURLResolver:
+                StaticModelScopeFileURLResolver(
+                    url: URL(
+                        string:
+                            "https://modelscope.cn/api/v1/models/owner/repo/repo"
+                    )!
+                ),
+            tokenStore: StaticHuggingFaceTokenStore(
+                value: "hf_must_not_leave_the_app"
+            )
+        )
+
+        let id = try await manager.enqueue(
+            request(
+                source: .modelScope,
+                files: [
+                    requestFile(
+                        artifactID: "main",
+                        role: .main,
+                        path: "model.gguf",
+                        payload: payload
+                    ),
+                ]
+            )
+        )
+
+        let completed = try await waitForState(
+            .completed,
+            id: id,
+            manager: manager
+        )
+        #expect(completed.source == .modelScope)
+        #expect(
+            completed.destinationRelativeDirectory
+                .hasPrefix("modelscope/")
+        )
+        let transfer = try #require(
+            await transport.transfers().first
+        )
+        #expect(
+            transfer.request.value(
+                forHTTPHeaderField: "Authorization"
+            ) == nil
+        )
+        #expect(
+            transfer.request.url?.host == "modelscope.cn"
+        )
+    }
+
     @Test("restores a partial file and resumes with Range")
     func restoresAndResumes() async throws {
         let root = temporaryRoot()
@@ -667,11 +731,16 @@ struct ModelDownloadManagerTests {
     }
 
     private func request(
+        source: ModelHubSource = .huggingFace,
         files: [ModelDownloadRequestFile]
     ) -> ModelDownloadRequest {
         ModelDownloadRequest(
+            source: source,
             reference: HuggingFaceRepositoryReference(
-                repositoryID: "owner/repo"
+                repositoryID: "owner/repo",
+                revision: source == .modelScope
+                    ? "master"
+                    : "main"
             ),
             displayName: "model-Q4_K_M",
             quantization: "Q4_K_M",
@@ -846,6 +915,20 @@ private struct StaticHuggingFaceTokenStore:
 
 private struct StaticHuggingFaceFileURLResolver:
     HuggingFaceFileURLResolving,
+    Sendable
+{
+    let url: URL
+
+    func resolveURL(
+        reference: HuggingFaceRepositoryReference,
+        filePath: String
+    ) throws -> URL {
+        url
+    }
+}
+
+private struct StaticModelScopeFileURLResolver:
+    ModelScopeFileURLResolving,
     Sendable
 {
     let url: URL

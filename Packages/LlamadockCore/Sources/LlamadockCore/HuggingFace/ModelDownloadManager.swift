@@ -55,6 +55,8 @@ public actor ModelDownloadManager {
     private let store: any ModelDownloadStoring
     private let transport: any ModelDownloadTransporting
     private let urlResolver: any HuggingFaceFileURLResolving
+    private let modelScopeURLResolver:
+        any ModelScopeFileURLResolving
     private let tokenStore: any HuggingFaceTokenStoring
     private let metadataReader: GGUFMetadataReader
     private let fileManager: FileManager
@@ -73,6 +75,9 @@ public actor ModelDownloadManager {
             URLSessionModelDownloadTransport(),
         urlResolver: any HuggingFaceFileURLResolving =
             HuggingFaceHubClient(),
+        modelScopeURLResolver:
+            any ModelScopeFileURLResolving =
+                ModelScopeHubClient(),
         tokenStore: any HuggingFaceTokenStoring =
             KeychainHuggingFaceTokenStore(),
         metadataReader: GGUFMetadataReader =
@@ -85,6 +90,7 @@ public actor ModelDownloadManager {
         )
         self.transport = transport
         self.urlResolver = urlResolver
+        self.modelScopeURLResolver = modelScopeURLResolver
         self.tokenStore = tokenStore
         self.metadataReader = metadataReader
         self.fileManager = fileManager
@@ -155,6 +161,7 @@ public actor ModelDownloadManager {
 
         let job = ModelDownloadJob(
             id: id,
+            source: request.source,
             repositoryID: request.reference.repositoryID,
             revision: request.reference.revision,
             displayName: request.displayName,
@@ -386,7 +393,13 @@ public actor ModelDownloadManager {
             guard let initialJob = jobs[id] else {
                 throw ModelDownloadManagerError.jobNotFound(id)
             }
-            let token = try tokenStore.token()
+            let token: String?
+            switch initialJob.source {
+            case .huggingFace:
+                token = try tokenStore.token()
+            case .modelScope:
+                token = nil
+            }
             let reference = HuggingFaceRepositoryReference(
                 repositoryID: initialJob.repositoryID,
                 revision: initialJob.revision,
@@ -435,10 +448,19 @@ public actor ModelDownloadManager {
                     continue
                 }
 
-                let url = try urlResolver.resolveURL(
-                    reference: reference,
-                    filePath: file.repositoryPath
-                )
+                let url: URL
+                switch job.source {
+                case .huggingFace:
+                    url = try urlResolver.resolveURL(
+                        reference: reference,
+                        filePath: file.repositoryPath
+                    )
+                case .modelScope:
+                    url = try modelScopeURLResolver.resolveURL(
+                        reference: reference,
+                        filePath: file.repositoryPath
+                    )
+                }
                 guard
                     url.scheme?.lowercased() == "https",
                     url.host != nil,
@@ -912,7 +934,7 @@ public actor ModelDownloadManager {
             disambiguator: artifactSeed
         )
         return [
-            "huggingface",
+            request.source.storageDirectoryComponent,
             repository[0],
             repository[1],
             revision,

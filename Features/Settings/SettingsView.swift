@@ -10,10 +10,6 @@ struct SettingsView: View {
     private var automaticallyCheckAppUpdates = true
     @AppStorage(AppLanguage.storageKey)
     private var appLanguage = AppLanguage.system
-    @AppStorage(AppAppearance.showMenuBarIconKey)
-    private var showMenuBarIcon = true
-    @AppStorage(AppAppearance.showDockIconKey)
-    private var showDockIcon = true
     @State private var huggingFaceToken = ""
     @State private var diagnosticsCopied = false
 
@@ -58,7 +54,6 @@ struct SettingsView: View {
         .frame(width: 620, height: 460)
         .task {
             appModel.refreshHuggingFaceTokenState()
-            applyDockAppearance()
         }
     }
 
@@ -89,36 +84,6 @@ struct SettingsView: View {
 
     private var appearanceSettings: some View {
         settingsForm {
-            Section("App Presence") {
-                Toggle(
-                    "Show menu bar icon",
-                    isOn: $showMenuBarIcon
-                )
-                .onChange(of: showMenuBarIcon) {
-                    if !showMenuBarIcon && !showDockIcon {
-                        showDockIcon = true
-                    }
-                    applyDockAppearance()
-                }
-
-                Toggle(
-                    "Show application icon in Dock",
-                    isOn: $showDockIcon
-                )
-                .disabled(!showMenuBarIcon && showDockIcon)
-                .onChange(of: showDockIcon) {
-                    if !showDockIcon {
-                        showMenuBarIcon = true
-                    }
-                    applyDockAppearance()
-                }
-
-                Text(
-                    "Keep at least one app entry visible so LlamaDock can always be reopened."
-                )
-                .settingsCaption()
-            }
-
             Section("Accessibility") {
                 Text(
                     "LlamaDock follows macOS Reduce Motion, Increase Contrast, keyboard navigation, and VoiceOver settings."
@@ -338,14 +303,6 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
-    }
-
-    private func applyDockAppearance() {
-        let policy: NSApplication.ActivationPolicy =
-            showDockIcon ? .regular : .accessory
-        if NSApp.activationPolicy() != policy {
-            NSApp.setActivationPolicy(policy)
-        }
     }
 
     private func localized(

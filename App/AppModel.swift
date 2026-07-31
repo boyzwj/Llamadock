@@ -5,6 +5,11 @@ import Observation
 @MainActor
 @Observable
 final class AppModel {
+    private static let serviceHostDefaultsKey =
+        "serviceNetwork.host"
+    private static let servicePortDefaultsKey =
+        "serviceNetwork.port"
+
     var selectedSection: AppSection? = .overview
     var runtimeReports: [RuntimeProbeReport] = []
     var runtimes: [RuntimeInstallation] = []
@@ -29,6 +34,7 @@ final class AppModel {
     var modelDirectoryIssues: [ModelDirectoryResolutionIssue] = []
     var modelScanSnapshot: LocalModelScanSnapshot?
     var selectedLibraryModelID: String?
+    var activeModelHubSource: ModelHubSource = .huggingFace
     var huggingFaceRepositories: [HuggingFaceRepository] = []
     var selectedHuggingFaceRepositoryID: String?
     var huggingFaceReference: HuggingFaceRepositoryReference?
@@ -44,6 +50,8 @@ final class AppModel {
     var modelDownloadError: String?
     var profiles: [LaunchProfile] = []
     var selectedProfileID: UUID?
+    var serviceHost: String
+    var servicePort: UInt16
     var profile: LaunchProfile? {
         get {
             guard let selectedProfileID else {
@@ -106,6 +114,7 @@ final class AppModel {
     private let modelRemovalPlanner: LocalModelRemovalPlanner
     private let modelTrasher: any LocalModelTrashing
     private let huggingFaceClient: any HuggingFaceHubServing
+    private let modelScopeClient: any ModelScopeHubServing
     private let huggingFaceTokenStore: any HuggingFaceTokenStoring
     private let modelDownloadManager: ModelDownloadManager
     private let modelDownloadProfileFactory:
@@ -123,6 +132,8 @@ final class AppModel {
     private var serverModelSecurityScopes: [URL] = []
     private var serverModelURLs: [URL] = []
     private var observedCompletedDownloadIDs: Set<UUID> = []
+    private var shouldMigrateServiceHostFromProfile: Bool
+    private var shouldMigrateServicePortFromProfile: Bool
 
     init(
         runtimeDiscovery: RuntimeCandidateDiscovery = RuntimeCandidateDiscovery(),
@@ -155,6 +166,7 @@ final class AppModel {
             LocalModelRemovalPlanner(),
         modelTrasher: (any LocalModelTrashing)? = nil,
         huggingFaceClient: (any HuggingFaceHubServing)? = nil,
+        modelScopeClient: (any ModelScopeHubServing)? = nil,
         huggingFaceTokenStore: (
             any HuggingFaceTokenStoring
         )? = nil,
@@ -167,6 +179,30 @@ final class AppModel {
         self.runtimeProbe = runtimeProbe
         self.serverController = serverController
         self.userDefaults = userDefaults
+        let persistedHost = userDefaults.string(
+            forKey: Self.serviceHostDefaultsKey
+        )?.trimmingCharacters(in: .whitespacesAndNewlines)
+        serviceHost = persistedHost.flatMap {
+            $0.isEmpty ? nil : $0
+        } ?? "127.0.0.1"
+        shouldMigrateServiceHostFromProfile =
+            persistedHost?.isEmpty != false
+
+        let persistedPort = (
+            userDefaults.object(
+                forKey: Self.servicePortDefaultsKey
+            ) as? NSNumber
+        )?.intValue
+        if
+            let persistedPort,
+            (1...Int(UInt16.max)).contains(persistedPort)
+        {
+            servicePort = UInt16(persistedPort)
+            shouldMigrateServicePortFromProfile = false
+        } else {
+            servicePort = ServerOptions.defaultPort
+            shouldMigrateServicePortFromProfile = true
+        }
 
         let directories: ApplicationDirectories
         if let applicationDirectories {
@@ -196,6 +232,8 @@ final class AppModel {
             ?? FileManagerLocalModelTrasher()
         self.huggingFaceClient = huggingFaceClient
             ?? HuggingFaceHubClient()
+        self.modelScopeClient = modelScopeClient
+            ?? ModelScopeHubClient()
         let tokenStore = huggingFaceTokenStore
             ?? KeychainHuggingFaceTokenStore()
         self.huggingFaceTokenStore = tokenStore
@@ -298,6 +336,9 @@ final class AppModel {
             } ?? profiles.first?.id
             persistSelectedProfileID()
             if let restoredProfile = profile {
+                migrateServiceNetworkConfigurationIfNeeded(
+                    from: restoredProfile
+                )
                 selectedModelURL = URL(
                     filePath: restoredProfile.model.mainPath,
                     directoryHint: .notDirectory
@@ -955,12 +996,31 @@ final class AppModel {
         }
     }
 
-    func searchHuggingFace(
-        _ input: String
+    func activateModelHub(
+        _ source: ModelHubSource
+    ) {
+        guard activeModelHubSource != source else {
+            return
+        }
+        activeModelHubSource = source
+        huggingFaceRepositories = []
+        selectedHuggingFaceRepositoryID = nil
+        huggingFaceReference = nil
+        huggingFaceCatalog = nil
+        selectedHuggingFaceArtifactID = nil
+        selectedHuggingFaceCompanionArtifactIDs = []
+        huggingFaceError = nil
+        modelDownloadError = nil
+    }
+
+    func searchModelHub(
+        _ input: String,
+        source: ModelHubSource
     ) async {
         guard !isSearchingHuggingFace else {
             return
         }
+        activateModelHub(source)
         isSearchingHuggingFace = true
         huggingFaceError = nil
         defer { isSearchingHuggingFace = false }
@@ -970,20 +1030,39 @@ final class AppModel {
                 in: .whitespacesAndNewlines
             )
             let reference: HuggingFaceRepositoryReference?
-            if isHuggingFaceReference(query) {
-                reference = try HuggingFaceReferenceParser().parse(
-                    query
-                )
+            if isRepositoryReference(query, source: source) {
+                switch source {
+                case .huggingFace:
+                    reference = try HuggingFaceReferenceParser()
+                        .parse(query)
+                case .modelScope:
+                    reference = try ModelScopeReferenceParser()
+                        .parse(query)
+                }
             } else {
                 reference = nil
             }
 
-            let token = try huggingFaceTokenStore.token()
-            let repositories = try await huggingFaceClient.searchModels(
-                query: reference?.repositoryID ?? query,
-                limit: 50,
-                token: token
-            )
+            let token: String?
+            let repositories: [HuggingFaceRepository]
+            switch source {
+            case .huggingFace:
+                token = try huggingFaceTokenStore.token()
+                repositories = try await huggingFaceClient.searchModels(
+                    query: reference?.repositoryID ?? query,
+                    limit: 50,
+                    token: token
+                )
+            case .modelScope:
+                token = nil
+                repositories = try await modelScopeClient.searchModels(
+                    query: reference?.repositoryID ?? query,
+                    limit: 50
+                )
+            }
+            guard activeModelHubSource == source else {
+                return
+            }
             if let reference {
                 let exactRepository = repositories.first {
                     $0.id.caseInsensitiveCompare(
@@ -1007,18 +1086,23 @@ final class AppModel {
                     ) != .orderedSame
                 }
                 selectedHuggingFaceRepositoryID = exactRepository.id
-                try await loadHuggingFaceCatalog(
+                try await loadModelHubCatalog(
                     reference: reference,
+                    source: source,
                     token: token
                 )
             } else {
                 huggingFaceRepositories = repositories
                 selectedHuggingFaceRepositoryID = repositories.first?.id
                 if let repository = repositories.first {
-                    try await loadHuggingFaceCatalog(
+                    try await loadModelHubCatalog(
                         reference: HuggingFaceRepositoryReference(
-                            repositoryID: repository.id
+                            repositoryID: repository.id,
+                            revision: source == .modelScope
+                                ? "master"
+                                : "main"
                         ),
+                        source: source,
                         token: token
                     )
                 } else {
@@ -1028,12 +1112,15 @@ final class AppModel {
                 }
             }
         } catch {
-            huggingFaceError = error.localizedDescription
+            if activeModelHubSource == source {
+                huggingFaceError = error.localizedDescription
+            }
         }
     }
 
-    func selectHuggingFaceRepository(
-        _ id: String?
+    func selectModelHubRepository(
+        _ id: String?,
+        source: ModelHubSource
     ) async {
         guard
             !isLoadingHuggingFaceRepository,
@@ -1044,14 +1131,23 @@ final class AppModel {
         selectedHuggingFaceRepositoryID = id
         huggingFaceError = nil
         do {
-            try await loadHuggingFaceCatalog(
+            let token = source == .huggingFace
+                ? try huggingFaceTokenStore.token()
+                : nil
+            try await loadModelHubCatalog(
                 reference: HuggingFaceRepositoryReference(
-                    repositoryID: id
+                    repositoryID: id,
+                    revision: source == .modelScope
+                        ? "master"
+                        : "main"
                 ),
-                token: try huggingFaceTokenStore.token()
+                source: source,
+                token: token
             )
         } catch {
-            huggingFaceError = error.localizedDescription
+            if activeModelHubSource == source {
+                huggingFaceError = error.localizedDescription
+            }
         }
     }
 
@@ -1138,7 +1234,7 @@ final class AppModel {
         }
     }
 
-    func downloadSelectedHuggingFaceArtifact() async {
+    func downloadSelectedModelHubArtifact() async {
         guard
             let reference = huggingFaceReference,
             let artifact = selectedHuggingFaceArtifact,
@@ -1155,19 +1251,30 @@ final class AppModel {
             (
                 repository.gated.requiresAuthentication
                     || repository.isPrivate
-            ),
-            !isHuggingFaceTokenConfigured
+            )
         {
-            modelDownloadError = localized("""
-                Add a Hugging Face token in Settings before downloading \
-                this restricted repository.
-                """)
-            return
+            switch activeModelHubSource {
+            case .huggingFace:
+                if !isHuggingFaceTokenConfigured {
+                    modelDownloadError = localized("""
+                        Add a Hugging Face token in Settings before \
+                        downloading this restricted repository.
+                        """)
+                    return
+                }
+            case .modelScope:
+                modelDownloadError = localized("""
+                    LlamaDock currently supports public ModelScope \
+                    repositories. Choose a public repository to download.
+                    """)
+                return
+            }
         }
         modelDownloadError = nil
         do {
             let artifacts = selectedHuggingFaceDownloadArtifacts
             let request = ModelDownloadRequest(
+                source: activeModelHubSource,
                 reference: reference,
                 displayName: artifact.displayName,
                 quantization: artifact.quantization,
@@ -1429,6 +1536,33 @@ final class AppModel {
         refreshCommandPreview()
     }
 
+    func updateServiceHost(_ host: String) {
+        let normalized = host.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !normalized.isEmpty, normalized != serviceHost else {
+            return
+        }
+        clearServerFailure()
+        serviceHost = normalized
+        shouldMigrateServiceHostFromProfile = false
+        persistServiceNetworkConfiguration()
+        refreshCommandPreview()
+    }
+
+    func updateServicePort(_ port: Int) {
+        let bounded = min(max(port, 1), Int(UInt16.max))
+        let normalized = UInt16(bounded)
+        guard normalized != servicePort else {
+            return
+        }
+        clearServerFailure()
+        servicePort = normalized
+        shouldMigrateServicePortFromProfile = false
+        persistServiceNetworkConfiguration()
+        refreshCommandPreview()
+    }
+
     func startServer() async {
         guard !isServerOperationInProgress else {
             return
@@ -1469,8 +1603,9 @@ final class AppModel {
 
         let invocation: ProcessInvocation
         do {
+            let effectiveProfile = profileWithServiceNetwork(profile)
             invocation = try ServerInvocationBuilder().makeServerInvocation(
-                profile: profile,
+                profile: effectiveProfile,
                 runtime: runtime
             )
         } catch {
@@ -1490,8 +1625,8 @@ final class AppModel {
                 profileID: profile.id,
                 runtimeID: runtime.id,
                 invocation: invocation,
-                host: profile.server.host,
-                port: profile.server.port
+                host: serviceHost,
+                port: servicePort
             )
             var usedProfile = profile
             usedProfile.lastUsedAt = Date()
@@ -1735,7 +1870,8 @@ final class AppModel {
             selectedHuggingFaceDownloadArtifacts.map(\.id)
         )
         return modelDownloadSnapshot.jobs.last {
-            $0.repositoryID == reference.repositoryID
+            $0.source == activeModelHubSource
+                && $0.repositoryID == reference.repositoryID
                 && $0.revision == reference.revision
                 && Set($0.files.map(\.artifactID))
                     == selectedArtifactIDs
@@ -1757,8 +1893,9 @@ final class AppModel {
         applicationDirectories.models
     }
 
-    private func loadHuggingFaceCatalog(
+    private func loadModelHubCatalog(
         reference: HuggingFaceRepositoryReference,
+        source: ModelHubSource,
         token: String?
     ) async throws {
         isLoadingHuggingFaceRepository = true
@@ -1768,10 +1905,21 @@ final class AppModel {
         selectedHuggingFaceCompanionArtifactIDs = []
         defer { isLoadingHuggingFaceRepository = false }
 
-        let files = try await huggingFaceClient.repositoryFiles(
-            reference: reference,
-            token: token
-        )
+        let files: [HuggingFaceRepositoryFile]
+        switch source {
+        case .huggingFace:
+            files = try await huggingFaceClient.repositoryFiles(
+                reference: reference,
+                token: token
+            )
+        case .modelScope:
+            files = try await modelScopeClient.repositoryFiles(
+                reference: reference
+            )
+        }
+        guard activeModelHubSource == source else {
+            return
+        }
         let catalog = HuggingFaceFileCatalogBuilder().makeCatalog(
             files: files
         )
@@ -1793,15 +1941,25 @@ final class AppModel {
         }?.id
     }
 
-    private func isHuggingFaceReference(
-        _ input: String
+    private func isRepositoryReference(
+        _ input: String,
+        source: ModelHubSource
     ) -> Bool {
-        input.contains("/")
-            || input.localizedCaseInsensitiveContains(
+        if input.contains("/") {
+            return true
+        }
+        switch source {
+        case .huggingFace:
+            return input.localizedCaseInsensitiveContains(
                 "huggingface.co"
             )
-            || input.contains("-hf")
-            || input.contains("--hf-repo")
+                || input.contains("-hf")
+                || input.contains("--hf-repo")
+        case .modelScope:
+            return input.localizedCaseInsensitiveContains(
+                "modelscope.cn"
+            )
+        }
     }
 
     private func performModelDownloadAction(
@@ -2445,8 +2603,9 @@ final class AppModel {
         }
 
         do {
+            let effectiveProfile = profileWithServiceNetwork(profile)
             let invocation = try ServerInvocationBuilder().makeServerInvocation(
-                profile: profile,
+                profile: effectiveProfile,
                 runtime: runtime
             )
             commandPreview = invocation.displayCommand
@@ -2455,6 +2614,45 @@ final class AppModel {
             commandPreview = nil
             commandError = String(describing: error)
         }
+    }
+
+    private func profileWithServiceNetwork(
+        _ profile: LaunchProfile
+    ) -> LaunchProfile {
+        var effectiveProfile = profile
+        effectiveProfile.server.host = serviceHost
+        effectiveProfile.server.port = servicePort
+        return effectiveProfile
+    }
+
+    private func migrateServiceNetworkConfigurationIfNeeded(
+        from profile: LaunchProfile
+    ) {
+        var didMigrate = false
+        if shouldMigrateServiceHostFromProfile {
+            serviceHost = profile.server.host
+            shouldMigrateServiceHostFromProfile = false
+            didMigrate = true
+        }
+        if shouldMigrateServicePortFromProfile {
+            servicePort = profile.server.port
+            shouldMigrateServicePortFromProfile = false
+            didMigrate = true
+        }
+        if didMigrate {
+            persistServiceNetworkConfiguration()
+        }
+    }
+
+    private func persistServiceNetworkConfiguration() {
+        userDefaults.set(
+            serviceHost,
+            forKey: Self.serviceHostDefaultsKey
+        )
+        userDefaults.set(
+            Int(servicePort),
+            forKey: Self.servicePortDefaultsKey
+        )
     }
 
     private func serverStartFailureMessage(

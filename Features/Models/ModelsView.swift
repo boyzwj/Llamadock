@@ -19,7 +19,9 @@ struct ModelsView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Models")
                         .font(.largeTitle.bold())
-                    Text("Local GGUF library and Hugging Face")
+                    Text(
+                        "Local GGUF library, Hugging Face, and ModelScope"
+                    )
                         .foregroundStyle(.secondary)
                 }
 
@@ -36,7 +38,7 @@ struct ModelsView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
-                .frame(width: 360)
+                .frame(width: 420)
             }
             .padding(.horizontal, LlamaDockLayout.pagePadding)
             .padding(.vertical, 14)
@@ -47,7 +49,11 @@ struct ModelsView: View {
             case .local:
                 localLibrary
             case .huggingFace:
-                HuggingFaceModelsView()
+                ModelHubModelsView(source: .huggingFace)
+                    .id(ModelHubSource.huggingFace)
+            case .modelScope:
+                ModelHubModelsView(source: .modelScope)
+                    .id(ModelHubSource.modelScope)
             }
         }
         .navigationTitle("Models")
@@ -677,19 +683,6 @@ struct ModelsView: View {
                         }
                     }
 
-                    Section("Network") {
-                        capabilityField("Host", flag: "--host") {
-                            TextField("Host", text: hostBinding)
-                        }
-                        capabilityField("Port", flag: "--port") {
-                            TextField(
-                                "Port",
-                                value: portBinding,
-                                format: .number
-                            )
-                        }
-                    }
-
                     if profileEditorLevel.includes(.performance) {
                         Section("Performance") {
                         optionalIntegerField(
@@ -1004,36 +997,10 @@ struct ModelsView: View {
         )
     }
 
-    private var hostBinding: Binding<String> {
-        Binding(
-            get: { appModel.profile?.server.host ?? "127.0.0.1" },
-            set: { value in
-                appModel.updateProfile { $0.server.host = value }
-            }
-        )
-    }
-
     private var aliasBinding: Binding<String> {
         optionalTextBinding(
             get: { $0.server.alias },
             set: { $0.server.alias = $1 }
-        )
-    }
-
-    private var portBinding: Binding<Int> {
-        Binding(
-            get: {
-                Int(
-                    appModel.profile?.server.port
-                        ?? ServerOptions.defaultPort
-                )
-            },
-            set: { value in
-                let bounded = min(max(value, 1), Int(UInt16.max))
-                appModel.updateProfile {
-                    $0.server.port = UInt16(bounded)
-                }
-            }
         )
     }
 
@@ -1542,6 +1509,7 @@ private enum ModelSource:
 {
     case local
     case huggingFace
+    case modelScope
 
     var id: String {
         rawValue
@@ -1553,6 +1521,8 @@ private enum ModelSource:
             appLocalizedString("Local Library", locale: locale)
         case .huggingFace:
             appLocalizedString("Hugging Face", locale: locale)
+        case .modelScope:
+            appLocalizedString("ModelScope", locale: locale)
         }
     }
 
@@ -1562,6 +1532,8 @@ private enum ModelSource:
             "internaldrive"
         case .huggingFace:
             "globe"
+        case .modelScope:
+            "network"
         }
     }
 }

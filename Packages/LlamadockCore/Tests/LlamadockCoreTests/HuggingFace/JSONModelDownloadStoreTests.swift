@@ -51,7 +51,54 @@ struct JSONModelDownloadStoreTests {
         }
     }
 
+    @Test("restores legacy jobs without a source as Hugging Face")
+    func restoresLegacySourceDefault() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileURL = root.appending(path: "state.json")
+        let store = JSONModelDownloadStore(fileURL: fileURL)
+        let legacyJob = makeJob()
+        try await store.saveJobs([legacyJob])
+
+        var object = try #require(
+            JSONSerialization.jsonObject(
+                with: Data(contentsOf: fileURL)
+            ) as? [String: Any]
+        )
+        var jobs = try #require(
+            object["jobs"] as? [[String: Any]]
+        )
+        jobs[0].removeValue(forKey: "source")
+        object["jobs"] = jobs
+        try JSONSerialization.data(
+            withJSONObject: object,
+            options: [.sortedKeys]
+        ).write(to: fileURL)
+
+        let restored = try #require(
+            try await store.loadJobs().first
+        )
+        #expect(restored.source == .huggingFace)
+    }
+
+    @Test("round-trips the ModelScope source")
+    func roundTripsModelScopeSource() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileURL = root.appending(path: "state.json")
+        let store = JSONModelDownloadStore(fileURL: fileURL)
+        let job = makeJob(source: .modelScope)
+
+        try await store.saveJobs([job])
+
+        let restored = try #require(
+            try await store.loadJobs().first
+        )
+        #expect(restored.source == .modelScope)
+    }
+
     private func makeJob(
+        source: ModelHubSource = .huggingFace,
         destinationRelativeDirectory: String =
             "huggingface/owner/repo/main/model"
     ) -> ModelDownloadJob {
@@ -60,6 +107,7 @@ struct JSONModelDownloadStoreTests {
             id: UUID(
                 uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
             )!,
+            source: source,
             repositoryID: "owner/repo",
             revision: "main",
             displayName: "model-Q4_K_M",

@@ -34,10 +34,11 @@ runtime's advertised flags while extra arguments remain tokenized and
 shell-free.
 
 Milestone 4 adds browsing for public and authenticated Hugging Face GGUF
-repositories. It normalizes repository URLs and `llama -hf` references, pages
-through the real file tree, and groups quantizations, split artifacts, vision
-projectors, and draft models. Optional Hub credentials are masked in the UI and
-stored only as a macOS Keychain generic password.
+repositories plus public ModelScope GGUF repositories. It normalizes
+repository URLs and `llama -hf` references, reads each source's real file tree,
+and groups quantizations, split artifacts, vision projectors, and draft models.
+Optional Hugging Face credentials are masked in the UI and stored only as a
+macOS Keychain generic password; they are never sent to ModelScope.
 Main artifacts can be queued, paused, resumed after relaunch with HTTP Range,
 cancelled, bundled with optional mmproj/draft companions, checked against exact
 sizes, available Hub SHA-256 digests, and bounded GGUF structure validation,
@@ -203,7 +204,7 @@ Download state is readable versioned JSON at
 `~/Library/Application Support/Llamadock/downloads/state.json`. Partial files
 live under `downloads/jobs/<job-id>/` and are removed after successful import
 or cancellation. Completed artifacts are stored under
-`models/huggingface/<owner>/<repository>/<revision>/`.
+`models/<huggingface|modelscope>/<owner>/<repository>/<revision>/`.
 
 ## Managed runtime storage
 

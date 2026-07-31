@@ -1,10 +1,12 @@
 import LlamadockCore
 import SwiftUI
 
-struct HuggingFaceModelsView: View {
+struct ModelHubModelsView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.locale) private var locale
     @State private var query = ""
+
+    let source: ModelHubSource
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,13 +34,18 @@ struct HuggingFaceModelsView: View {
                 }
             }
         }
+        .onAppear {
+            appModel.activateModelHub(source)
+        }
     }
 
     private var searchBar: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
                 TextField(
-                    "Model name, owner/repository, URL, or llama -hf command",
+                    source == .huggingFace
+                        ? "Model name, owner/repository, URL, or llama -hf command"
+                        : "Model name, owner/repository, or modelscope.cn URL",
                     text: $query
                 )
                 .textFieldStyle(.roundedBorder)
@@ -59,13 +66,24 @@ struct HuggingFaceModelsView: View {
                     ProgressView()
                         .controlSize(.small)
                         .accessibilityLabel(
-                            "Searching Hugging Face"
+                            localized(
+                                "Searching \(sourceTitle)"
+                            )
                         )
                 }
             }
 
             Text(
-                "Examples: Qwen GGUF, bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M, or a huggingface.co repository URL."
+                source == .huggingFace
+                    ? "Examples: Qwen GGUF, bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M, or a huggingface.co repository URL."
+                    : "Examples: Qwen GGUF, unsloth/DeepSeek-R1-GGUF:Q4_K_M, or a modelscope.cn repository URL."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            Label(
+                localized("Source: \(sourceHost)"),
+                systemImage: "network"
             )
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -98,11 +116,15 @@ struct HuggingFaceModelsView: View {
             Label("Browse GGUF Repositories", systemImage: "globe")
         } description: {
             Text(
-                "Search the Hugging Face Hub or paste the same repository reference accepted by llama.cpp's -hf option."
+                source == .huggingFace
+                    ? "Search the Hugging Face Hub or paste the same repository reference accepted by llama.cpp's -hf option."
+                    : "Search public GGUF repositories on ModelScope or paste a modelscope.cn repository URL."
             )
         } actions: {
             Button("Try a Small Test Repository") {
-                query = "stories15M GGUF"
+                query = source == .huggingFace
+                    ? "stories15M GGUF"
+                    : "Qwen GGUF"
                 search()
             }
             .buttonStyle(.borderedProminent)
@@ -140,7 +162,10 @@ struct HuggingFaceModelsView: View {
                         }
                         Task {
                             await appModel
-                                .selectHuggingFaceRepository(id)
+                                .selectModelHubRepository(
+                                    id,
+                                    source: source
+                                )
                         }
                     }
                 )
@@ -255,10 +280,8 @@ struct HuggingFaceModelsView: View {
             }
 
             Link(
-                "Open on Hugging Face",
-                destination: HuggingFaceHubClient.endpoint.appending(
-                    path: repository.id
-                )
+                localized("Open on \(sourceTitle)"),
+                destination: repositoryURL(repository.id)
             )
             .font(.caption)
         }
@@ -267,13 +290,17 @@ struct HuggingFaceModelsView: View {
     private var gatedNotice: some View {
         Label {
             Text(
-                appModel.isHuggingFaceTokenConfigured
+                source == .modelScope
                     ? localized(
-                        "A Keychain token was used for this Hub request. Repository access still depends on the token owner's accepted terms and permissions."
+                        "LlamaDock currently downloads public ModelScope repositories without credentials. Private or gated ModelScope repositories are not yet supported."
                     )
-                    : localized(
-                        "This repository requires a Hugging Face token with access. Add one in Settings; LlamaDock has not sent any credentials."
-                    )
+                    : appModel.isHuggingFaceTokenConfigured
+                        ? localized(
+                            "A Keychain token was used for this Hub request. Repository access still depends on the token owner's accepted terms and permissions."
+                        )
+                        : localized(
+                            "This repository requires a Hugging Face token with access. Add one in Settings; LlamaDock has not sent any credentials."
+                        )
             )
         } icon: {
             Image(systemName: "lock.trianglebadge.exclamationmark")
@@ -585,7 +612,7 @@ struct HuggingFaceModelsView: View {
             ) {
                 Task {
                     await appModel
-                        .downloadSelectedHuggingFaceArtifact()
+                        .downloadSelectedModelHubArtifact()
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -599,12 +626,15 @@ struct HuggingFaceModelsView: View {
                                 .gated.requiresAuthentication
                                 == true
                                 || appModel
-                                    .selectedHuggingFaceRepository?
+                                .selectedHuggingFaceRepository?
                                     .isPrivate
                                     == true
                         )
-                            && !appModel
-                                .isHuggingFaceTokenConfigured
+                            && (
+                                source == .modelScope
+                                    || !appModel
+                                        .isHuggingFaceTokenConfigured
+                            )
                     )
             )
             .help(
@@ -733,7 +763,50 @@ struct HuggingFaceModelsView: View {
 
     private func search() {
         Task {
-            await appModel.searchHuggingFace(query)
+            await appModel.searchModelHub(
+                query,
+                source: source
+            )
+        }
+    }
+
+    private var sourceTitle: String {
+        switch source {
+        case .huggingFace:
+            localized("Hugging Face")
+        case .modelScope:
+            localized("ModelScope")
+        }
+    }
+
+    private var sourceHost: String {
+        switch source {
+        case .huggingFace:
+            "huggingface.co"
+        case .modelScope:
+            "modelscope.cn"
+        }
+    }
+
+    private var sourceEndpoint: URL {
+        switch source {
+        case .huggingFace:
+            HuggingFaceHubClient.endpoint
+        case .modelScope:
+            ModelScopeHubClient.endpoint
+        }
+    }
+
+    private func repositoryURL(
+        _ repositoryID: String
+    ) -> URL {
+        switch source {
+        case .huggingFace:
+            sourceEndpoint.appending(path: repositoryID)
+        case .modelScope:
+            sourceEndpoint
+                .appending(path: "models")
+                .appending(path: repositoryID)
         }
     }
 
@@ -897,7 +970,7 @@ private extension ModelDownloadState {
 }
 
 #Preview {
-    HuggingFaceModelsView()
+    ModelHubModelsView(source: .huggingFace)
         .environment(AppModel())
         .frame(width: 980, height: 720)
 }

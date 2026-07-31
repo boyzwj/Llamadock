@@ -4,9 +4,14 @@ import SwiftUI
 
 struct ServiceMenuBarView: View {
     @Environment(AppModel.self) private var appModel
-    @Environment(\.openSettings) private var openSettings
-    @Environment(\.openWindow) private var openWindow
     @Environment(\.locale) private var locale
+    let presentMainWindow: () -> Void
+
+    init(
+        presentMainWindow: @escaping () -> Void = {}
+    ) {
+        self.presentMainWindow = presentMainWindow
+    }
 
     var body: some View {
         statusHeader
@@ -105,14 +110,8 @@ struct ServiceMenuBarView: View {
 
         Divider()
 
-        Button("Show LlamaDock", systemImage: "macwindow") {
-            openWindow(id: "main")
-            NSApp.activate(ignoringOtherApps: true)
-        }
-
         Button("Settings…", systemImage: "gear") {
-            openSettings()
-            NSApp.activate(ignoringOtherApps: true)
+            presentMainWindow()
         }
         .keyboardShortcut(",", modifiers: [.command])
 

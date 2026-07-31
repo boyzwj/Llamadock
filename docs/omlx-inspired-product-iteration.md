@@ -84,7 +84,7 @@
   日志             实时日志、级别过滤、复制/清空
 
 资源
-  模型             本地模型库与 Hugging Face 浏览
+  模型             本地模型库、Hugging Face 与 ModelScope 浏览
   下载             下载队列、进度、暂停/继续/取消
   Runtime          安装、更新、切换、回滚
 
@@ -98,6 +98,8 @@
 - 第一阶段允许“服务”和“日志”复用同一份 `ServerSnapshot`；
 - “下载”使用现有 `ModelDownloadSnapshot`，不新建第二套下载状态；
 - Profile 仍属于服务配置，不单独制造“配置管理器”概念；
+- 监听地址和端口属于全局服务网络配置，集中放在“服务”页；模型 Profile
+  只保存模型与推理参数，旧 Profile 中的 host/port 在首次升级时迁移为全局值；
 - Settings 继续使用独立 Scene，侧栏底部只提供入口和快捷键。
 
 ## 5. 视觉方向
@@ -181,9 +183,9 @@
 - 使用原生 `MenuBarExtra` 或等价 AppKit 状态项展示 Stopped / Starting /
   Ready / Degraded / Failed；
 - 菜单中展示当前模型、Profile、endpoint 和 uptime；
-- 提供 Start、Stop、Restart、Open WebUI、Copy API URL、Show LlamaDock、
-  Settings、Quit；
-- Appearance 增加“显示菜单栏图标”和“在 Dock 中显示应用图标”；
+- 提供 Start、Stop、Restart、Open WebUI、Copy API URL、Settings、Quit；
+- App 默认仅保留菜单栏图标；Settings 打开主窗口时显示 Dock 图标，最后一个
+  App 窗口关闭后恢复为仅菜单栏模式；
 - 正确处理窗口关闭、重新打开、App 退出和运行中服务；
 - VoiceOver label 与禁用原因完整。
 
@@ -202,7 +204,8 @@
 交付：
 
 - 顶部 Service Hero：状态、Runtime 版本、endpoint、Start/Stop/Restart；
-- 当前配置：模型、Profile、context、host/port、真实启动命令入口；
+- 全局网络配置：监听地址、端口，以及修改后重启生效的明确反馈；
+- 当前配置：模型、Profile、context、真实启动命令入口；
 - 可靠指标卡：PID、CPU、resident memory、threads、uptime；
 - Runtime、模型库、下载队列、最近错误的摘要卡；
 - 日志预览和“查看全部日志”；
@@ -221,7 +224,8 @@
 
 交付：
 
-- Models 保留本地/Hugging Face 分段，但统一列表行、详情、badge 和空状态；
+- Models 保留本地/Hugging Face/ModelScope 分段，但统一列表行、详情、badge
+  和空状态；
 - Downloads 成为稳定页面，展示队列、总进度、速度/剩余时间（仅在数据可靠时）、
   暂停、继续、取消和失败重试；
 - Runtimes 将“当前激活”“可更新”“已安装”分层，危险操作移入上下文菜单；
@@ -299,7 +303,7 @@
 | M1 主窗口与侧栏 | Complete | 分组侧栏、独立 Logs/Downloads、底部状态/设置、Cmd-1…6 与 Shift-Cmd-L；Computer Use 验证中英文 AX 树、侧栏折叠入口和 900 宽窗口 | 统一标题栏使内容区高度与整窗高度相差约 52 pt，已将内容下限校正为 548 pt 以支持 900×600 整窗 |
 | M2 菜单栏 Dock | Complete | 原生 `MenuBarExtra` 共享 `AppModel` 控制；关闭主窗口后进程仍运行；Appearance 双入口护栏实测为另一开关 disabled | 自动化无法单独展开系统菜单栏 extra 的弹出菜单；菜单内容、enablement、VoiceOver label 和主窗口恢复路径已由源码/AX 检查 |
 | M3 服务总览 | Complete | Overview/Service Hero、可信 PID/CPU/RSS/threads/uptime、配置/命令/资源/日志摘要；深浅色与中英文截图/AX 检查 | 未增加 KV Cache、Prefill 或 Token Generation 等不可验证指标 |
-| M4 资源工作流 | Complete | Models 渐进式 Profile；稳定 Downloads 队列与恢复操作；Runtime 当前/已安装分层和上下文危险操作；现有下载、Profile、Runtime 测试全通过 | 13k+ 本地模型行会超过 Computer Use 的全量 AX 序列化上限；应用进程保持运行，列表使用 SwiftUI 虚拟化，后续可增加分页/分段扫描 |
+| M4 资源工作流 | Complete | Models 渐进式 Profile；Hugging Face/ModelScope 双在线源；稳定 Downloads 队列与恢复操作；Runtime 当前/已安装分层和上下文危险操作；现有下载、Profile、Runtime 测试全通过 | 13k+ 本地模型行会超过 Computer Use 的全量 AX 序列化上限；应用进程保持运行，列表使用 SwiftUI 虚拟化，后续可增加分页/分段扫描 |
 | M5 Onboarding 与设置 | Complete | 条件式 Runtime→模型→Profile→Start 引导；六组 Settings；Reduce Motion；中英文即时切换；浅/深色、键盘和 VoiceOver/AX 检查 | macOS 自带 File/Edit/Window 菜单继续跟随系统语言，产品自定义 Navigate/Server 菜单跟随应用语言 |
 | M6 发布与本地安装 | Complete | 从最终 workspace 新建 Release archive 和本地 ZIP；重装 `/Applications/Llamadock.app`；版本 `1.0.0 (1)`、bundle ID `io.github.boyzwj.LlamaDock`、thin arm64、严格 codesign、安装前后 SHA-256/目录一致性和真实服务 smoke 均通过 | 本地包使用 ad-hoc hardened-runtime 签名；公开分发仍需 Developer ID 签名与 notarization |
 

@@ -41,6 +41,7 @@ struct ServersView: View {
                 }
             )
 
+            networkConfiguration
             endpointActions
             profileConfiguration
             launchCommand
@@ -61,6 +62,89 @@ struct ServersView: View {
         } else {
             Button("Review Profile") {
                 appModel.selectedSection = .models
+            }
+        }
+    }
+
+    private var networkConfiguration: some View {
+        SectionCard {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Network")
+                    .font(.title2.bold())
+
+                Grid(
+                    alignment: .leading,
+                    horizontalSpacing: 24,
+                    verticalSpacing: 12
+                ) {
+                    GridRow {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Listen Address")
+                                .font(.headline)
+                            Text(
+                                "Where llama-server accepts connections."
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+
+                        Picker(
+                            "Listen Address",
+                            selection: serviceHostBinding
+                        ) {
+                            ForEach(listenAddressOptions) { option in
+                                Text(option.title)
+                                    .tag(option.host)
+                            }
+                            if !isKnownListenAddress {
+                                Text(appModel.serviceHost)
+                                    .tag(appModel.serviceHost)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(width: 250, alignment: .trailing)
+                    }
+
+                    Divider()
+                        .gridCellColumns(2)
+
+                    GridRow {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Port")
+                                .font(.headline)
+                            Text(
+                                "Default 39281. Valid range 1–65535."
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+
+                        TextField(
+                            "Port",
+                            value: servicePortBinding,
+                            format: .number
+                        )
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 130)
+                    }
+                }
+
+                Label(
+                    appModel.serverSnapshot.run == nil
+                        ? localized(
+                            "These settings apply to every model profile."
+                        )
+                        : localized(
+                            "Changes are saved globally. Restart the service to apply them."
+                        ),
+                    systemImage:
+                        appModel.serverSnapshot.run == nil
+                            ? "network"
+                            : "arrow.clockwise.circle"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
     }
@@ -143,14 +227,6 @@ struct ServersView: View {
                             runtimeSummary
                         )
                         row(
-                            "Host",
-                            profile.server.host
-                        )
-                        row(
-                            "Port",
-                            String(profile.server.port)
-                        )
-                        row(
                             "Context",
                             profile.server.contextSize?
                                 .formatted()
@@ -230,10 +306,57 @@ struct ServersView: View {
     }
 
     private var endpoint: String? {
-        appModel.serverSnapshot.run?
-            .baseURL
+        (
+            appModel.serverSnapshot.run?.baseURL
+                ?? configuredBaseURL
+        )?
             .appending(path: "v1")
             .absoluteString
+    }
+
+    private var configuredBaseURL: URL? {
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = appModel.serviceHost
+        components.port = Int(appModel.servicePort)
+        return components.url
+    }
+
+    private var listenAddressOptions: [ListenAddressOption] {
+        [
+            ListenAddressOption(
+                host: "127.0.0.1",
+                title: "127.0.0.1 (Local only)"
+            ),
+            ListenAddressOption(
+                host: "0.0.0.0",
+                title: "0.0.0.0 (All networks)"
+            ),
+            ListenAddressOption(
+                host: "localhost",
+                title: "localhost"
+            ),
+        ]
+    }
+
+    private var isKnownListenAddress: Bool {
+        listenAddressOptions.contains {
+            $0.host == appModel.serviceHost
+        }
+    }
+
+    private var serviceHostBinding: Binding<String> {
+        Binding(
+            get: { appModel.serviceHost },
+            set: { appModel.updateServiceHost($0) }
+        )
+    }
+
+    private var servicePortBinding: Binding<Int> {
+        Binding(
+            get: { Int(appModel.servicePort) },
+            set: { appModel.updateServicePort($0) }
+        )
     }
 
     private var runtimeSummary: String {
@@ -298,6 +421,13 @@ struct ServersView: View {
     ) -> String {
         appLocalizedString(value, locale: locale)
     }
+}
+
+private struct ListenAddressOption: Identifiable {
+    let host: String
+    let title: LocalizedStringKey
+
+    var id: String { host }
 }
 
 #Preview {

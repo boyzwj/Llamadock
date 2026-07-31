@@ -1,21 +1,121 @@
 import AppKit
+import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var shutdownOwnedServer: (() async -> Void)?
     private var isShuttingDown = false
+    private var wasMainWindowRequested = false
+    private var mainWindowController: NSWindowController?
 
-    func setDockIconVisible(_ isVisible: Bool) {
-        let policy: NSApplication.ActivationPolicy = isVisible
-            ? .regular
-            : .accessory
-        guard NSApp.activationPolicy() != policy else {
+    func applicationWillFinishLaunching(
+        _ notification: Notification
+    ) {
+        setAccessoryActivationPolicy()
+        let center = NotificationCenter.default
+        center.addObserver(
+            self,
+            selector: #selector(windowDidBecomeMain(_:)),
+            name: NSWindow.didBecomeMainNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(windowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: nil
+        )
+    }
+
+    func applicationDidFinishLaunching(
+        _ notification: Notification
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.wasMainWindowRequested else {
+                return
+            }
+            self.hideUnrequestedWindows()
+        }
+    }
+
+    func presentMainWindow<Content: View>(_ rootView: Content) {
+        prepareToPresentMainWindow()
+
+        if
+            let controller = mainWindowController,
+            let window = controller.window
+        {
+            if let hostingController =
+                window.contentViewController
+                    as? NSHostingController<AnyView>
+            {
+                hostingController.rootView = AnyView(rootView)
+            }
+            controller.showWindow(nil)
+            window.makeKeyAndOrderFront(nil)
             return
         }
-        NSApp.setActivationPolicy(policy)
-        if isVisible {
-            NSApp.activate(ignoringOtherApps: true)
+
+        let window = NSWindow(
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: 1_080,
+                height: 720
+            ),
+            styleMask: [
+                .titled,
+                .closable,
+                .miniaturizable,
+                .resizable,
+            ],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "LlamaDock"
+        window.identifier = NSUserInterfaceItemIdentifier("main")
+        window.contentMinSize = NSSize(width: 860, height: 600)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = NSHostingController(
+            rootView: AnyView(rootView)
+        )
+        window.setFrameAutosaveName("LlamaDockMainWindow")
+        window.center()
+
+        let controller = NSWindowController(window: window)
+        mainWindowController = controller
+        controller.showWindow(nil)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    func prepareToPresentMainWindow() {
+        wasMainWindowRequested = true
+        if NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
         }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(
+        _ sender: NSApplication
+    ) -> Bool {
+        false
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        guard wasMainWindowRequested else {
+            hideUnrequestedWindows()
+            return false
+        }
+        guard !flag else {
+            return true
+        }
+        prepareToPresentMainWindow()
+        mainWindow?.makeKeyAndOrderFront(nil)
+        return true
     }
 
     func applicationShouldTerminate(
@@ -34,5 +134,87 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+
+    func applicationWillTerminate(
+        _ notification: Notification
+    ) {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc
+    private func windowDidBecomeMain(_ notification: Notification) {
+        guard
+            let window = notification.object as? NSWindow,
+            isAppWindow(window)
+        else {
+            return
+        }
+
+        guard wasMainWindowRequested else {
+            window.orderOut(nil)
+            setAccessoryActivationPolicy()
+            return
+        }
+
+        if NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
+        }
+    }
+
+    func applicationDidUpdate(
+        _ notification: Notification
+    ) {
+        guard !wasMainWindowRequested else {
+            return
+        }
+        hideUnrequestedWindows()
+    }
+
+    @objc
+    private func windowWillClose(_ notification: Notification) {
+        guard
+            let closingWindow = notification.object as? NSWindow,
+            isAppWindow(closingWindow)
+        else {
+            return
+        }
+
+        DispatchQueue.main.async { [weak self, weak closingWindow] in
+            guard let self else {
+                return
+            }
+            let hasVisibleWindow = NSApp.windows.contains { window in
+                window !== closingWindow
+                    && window.isVisible
+                    && self.isAppWindow(window)
+            }
+            if !hasVisibleWindow {
+                self.setAccessoryActivationPolicy()
+            }
+        }
+    }
+
+    private var mainWindow: NSWindow? {
+        mainWindowController?.window
+    }
+
+    private func hideUnrequestedWindows() {
+        for window in NSApp.windows
+        where window.isVisible && isAppWindow(window) {
+            window.orderOut(nil)
+        }
+        setAccessoryActivationPolicy()
+    }
+
+    private func setAccessoryActivationPolicy() {
+        if NSApp.activationPolicy() != .accessory {
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+
+    private func isAppWindow(_ window: NSWindow) -> Bool {
+        window.styleMask.contains(.titled)
+            && !window.isExcludedFromWindowsMenu
     }
 }

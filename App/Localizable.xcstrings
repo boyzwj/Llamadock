@@ -1,6 +1,86 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "0.0.0.0 (All networks)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0.0.0.0（所有网络）"
+          }
+        }
+      }
+    },
+    "127.0.0.1 (Local only)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "127.0.0.1（仅本机）"
+          }
+        }
+      }
+    },
+    "Changes are saved globally. Restart the service to apply them." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更改已全局保存。重启服务后生效。"
+          }
+        }
+      }
+    },
+    "Default 39281. Valid range 1–65535." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认 39281。有效范围为 1–65535。"
+          }
+        }
+      }
+    },
+    "Listen Address" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "监听地址"
+          }
+        }
+      }
+    },
+    "localhost" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "localhost"
+          }
+        }
+      }
+    },
+    "These settings apply to every model profile." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这些设置适用于所有模型配置。"
+          }
+        }
+      }
+    },
+    "Where llama-server accepts connections." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "llama-server 接受连接的地址。"
+          }
+        }
+      }
+    },
     "%@ download progress" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4909,6 +4989,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已验证缓存"
+          }
+        }
+      }
+    },
+    "Browse an online model source, choose a complete GGUF artifact, and add it to this queue." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览在线模型源，选择一个完整的 GGUF 构件并将其加入下载队列。"
+          }
+        }
+      }
+    },
+    "Examples: Qwen GGUF, unsloth/DeepSeek-R1-GGUF:Q4_K_M, or a modelscope.cn repository URL." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "示例：Qwen GGUF、unsloth/DeepSeek-R1-GGUF:Q4_K_M，或 modelscope.cn 仓库 URL。"
+          }
+        }
+      }
+    },
+    "Hugging Face and ModelScope download queue" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hugging Face 与 ModelScope 下载队列"
+          }
+        }
+      }
+    },
+    "LlamaDock currently downloads public ModelScope repositories without credentials. Private or gated ModelScope repositories are not yet supported." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LlamaDock 目前无需凭据即可下载公开的 ModelScope 仓库，暂不支持私有或受限的 ModelScope 仓库。"
+          }
+        }
+      }
+    },
+    "LlamaDock currently supports public ModelScope repositories. Choose a public repository to download." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LlamaDock 目前支持公开的 ModelScope 仓库。请选择公开仓库进行下载。"
+          }
+        }
+      }
+    },
+    "Local GGUF library, Hugging Face, and ModelScope" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地 GGUF 模型库、Hugging Face 与 ModelScope"
+          }
+        }
+      }
+    },
+    "Model name, owner/repository, or modelscope.cn URL" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型名称、所有者/仓库或 modelscope.cn URL"
+          }
+        }
+      }
+    },
+    "ModelScope" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ModelScope"
+          }
+        }
+      }
+    },
+    "Open on %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 %@ 中打开"
+          }
+        }
+      }
+    },
+    "Search public GGUF repositories on ModelScope or paste a modelscope.cn repository URL." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索 ModelScope 上的公开 GGUF 仓库，或粘贴 modelscope.cn 仓库 URL。"
+          }
+        }
+      }
+    },
+    "Searching %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在搜索 %@"
+          }
+        }
+      }
+    },
+    "Source: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来源：%@"
           }
         }
       }
