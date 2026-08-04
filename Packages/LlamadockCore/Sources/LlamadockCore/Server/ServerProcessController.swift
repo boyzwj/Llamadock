@@ -87,6 +87,8 @@ public actor ServerProcessController {
     private let healthChecker: any ServerHealthChecking
     private let endpointChecker: any ServerEndpointChecking
     private let metricsReader: any ProcessMetricsReading
+    private let ownershipStore: (any ServerOwnershipStoring)?
+    private let processInspector: any ServerProcessInspecting
     private var state: ServerState = .stopped
     private var run: ServerRun?
     private var ownedProcess: (any ManagedServerProcess)?
@@ -99,13 +101,18 @@ public actor ServerProcessController {
         endpointChecker: any ServerEndpointChecking = SocketServerEndpointChecker(),
         metricsReader: any ProcessMetricsReading =
             ProcessMetricsReader(),
-        logBuffer: BoundedLogBuffer = BoundedLogBuffer()
+        logBuffer: BoundedLogBuffer = BoundedLogBuffer(),
+        ownershipStore: (any ServerOwnershipStoring)? = nil,
+        processInspector: any ServerProcessInspecting =
+            DarwinServerProcessInspector()
     ) {
         self.launcher = launcher
         self.healthChecker = healthChecker
         self.endpointChecker = endpointChecker
         self.metricsReader = metricsReader
         self.logBuffer = logBuffer
+        self.ownershipStore = ownershipStore
+        self.processInspector = processInspector
     }
 
     public func snapshot() -> ServerSnapshot {
@@ -128,6 +135,86 @@ public actor ServerProcessController {
 
     public func clearLogs() {
         logBuffer.removeAll()
+    }
+
+    public func recoverOrphanedServer(
+        gracePeriod: Duration = .seconds(2)
+    ) async -> ServerOwnershipRecoveryResult {
+        guard ownedProcess == nil, let ownershipStore else {
+            return .noRecord
+        }
+
+        let record: ServerOwnershipRecord
+        do {
+            guard let stored = try await ownershipStore.load() else {
+                return .noRecord
+            }
+            record = stored
+        } catch {
+            return .failed(reason: error.localizedDescription)
+        }
+
+        guard
+            let identity = processInspector.identity(
+                processIdentifier: record.processIdentifier
+            ),
+            identityMatchesRecord(identity, record: record)
+        else {
+            do {
+                try await ownershipStore.remove()
+                return .staleRecordRemoved
+            } catch {
+                return .failed(reason: error.localizedDescription)
+            }
+        }
+
+        guard identity.parentProcessIdentifier == 1 else {
+            return .failed(
+                reason: "The recorded llama-server is still owned by process "
+                    + "\(identity.parentProcessIdentifier)."
+            )
+        }
+
+        processInspector.terminate(
+            processIdentifier: record.processIdentifier
+        )
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: gracePeriod)
+        while
+            processStillMatches(record),
+            clock.now < deadline
+        {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+
+        if processStillMatches(record) {
+            processInspector.forceTerminate(
+                processIdentifier: record.processIdentifier
+            )
+            let forceDeadline = clock.now.advanced(by: .seconds(1))
+            while
+                processStillMatches(record),
+                clock.now < forceDeadline
+            {
+                try? await Task.sleep(for: .milliseconds(25))
+            }
+        }
+
+        guard !processStillMatches(record) else {
+            return .failed(
+                reason: "Could not terminate the orphaned llama-server "
+                    + "process \(record.processIdentifier)."
+            )
+        }
+
+        do {
+            try await ownershipStore.remove()
+            return .orphanTerminated(
+                processIdentifier: record.processIdentifier
+            )
+        } catch {
+            return .failed(reason: error.localizedDescription)
+        }
     }
 
     public func start(
@@ -182,14 +269,47 @@ public actor ServerProcessController {
         }
 
         ownedProcess = process
+        let processIdentifier = await process.processIdentifier
+        let processStartTime = processInspector.identity(
+            processIdentifier: processIdentifier
+        )?.processStartTime ?? Date()
         let currentRun = ServerRun(
-            processIdentifier: await process.processIdentifier,
-            processStartTime: Date(),
+            processIdentifier: processIdentifier,
+            processStartTime: processStartTime,
             runtimeID: runtimeID,
             profileID: profileID,
             command: invocation,
             baseURL: baseURL
         )
+        if let ownershipStore {
+            do {
+                try await ownershipStore.save(
+                    ServerOwnershipRecord(
+                        ownerProcessIdentifier: Int32(
+                            ProcessInfo.processInfo.processIdentifier
+                        ),
+                        processIdentifier: processIdentifier,
+                        processStartTime: processStartTime,
+                        executableURL: invocation.executableURL,
+                        runtimeID: runtimeID,
+                        profileID: profileID,
+                        host: host,
+                        port: port
+                    )
+                )
+            } catch {
+                await process.terminate()
+                if await process.isRunning() {
+                    await process.forceTerminate()
+                }
+                ownedProcess = nil
+                metricsReader.reset()
+                let reason = "Could not persist server ownership: "
+                    + error.localizedDescription
+                state = .failed(reason: reason)
+                throw ServerProcessError.launchFailed(reason: reason)
+            }
+        }
         run = currentRun
         let stream = await process.events()
         eventTask = Task { [weak self] in
@@ -238,6 +358,7 @@ public actor ServerProcessController {
         run = nil
         metricsReader.reset()
         state = .stopped
+        await removeOwnershipRecord()
     }
 
     private func waitForReadiness(
@@ -272,6 +393,7 @@ public actor ServerProcessController {
                 metricsReader.reset()
                 eventTask?.cancel()
                 eventTask = nil
+                await removeOwnershipRecord()
                 return
             }
 
@@ -306,12 +428,13 @@ public actor ServerProcessController {
         metricsReader.reset()
         eventTask?.cancel()
         eventTask = nil
+        await removeOwnershipRecord()
     }
 
     private func receive(
         _ event: ManagedProcessEvent,
         runID: UUID
-    ) {
+    ) async {
         guard run?.id == runID else {
             return
         }
@@ -327,6 +450,7 @@ public actor ServerProcessController {
         case .terminated(let status):
             ownedProcess = nil
             metricsReader.reset()
+            await removeOwnershipRecord()
             switch state {
             case .stopping:
                 state = .stopped
@@ -350,6 +474,35 @@ public actor ServerProcessController {
         case .starting, .ready, .degraded, .failed:
             return true
         }
+    }
+
+    private func identityMatchesRecord(
+        _ identity: ServerProcessIdentity,
+        record: ServerOwnershipRecord
+    ) -> Bool {
+        identity.processIdentifier == record.processIdentifier
+            && identity.executableURL.resolvingSymlinksInPath()
+                == record.executableURL.resolvingSymlinksInPath()
+            && abs(
+                identity.processStartTime.timeIntervalSince(
+                    record.processStartTime
+                )
+            ) < 2
+    }
+
+    private func processStillMatches(
+        _ record: ServerOwnershipRecord
+    ) -> Bool {
+        guard let identity = processInspector.identity(
+            processIdentifier: record.processIdentifier
+        ) else {
+            return false
+        }
+        return identityMatchesRecord(identity, record: record)
+    }
+
+    private func removeOwnershipRecord() async {
+        try? await ownershipStore?.remove()
     }
 
     private func makeBaseURL(host: String, port: UInt16) -> URL? {

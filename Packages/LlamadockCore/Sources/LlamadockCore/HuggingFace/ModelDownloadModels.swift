@@ -121,6 +121,7 @@ public struct ModelDownloadFile:
     public var receivedBytes: Int64
     public var etag: String?
     public var isVerified: Bool
+    public var restartReason: String?
 
     public var id: String {
         "\(artifactID):\(repositoryPath)"
@@ -135,7 +136,8 @@ public struct ModelDownloadFile:
         expectedSHA256: String?,
         receivedBytes: Int64 = 0,
         etag: String? = nil,
-        isVerified: Bool = false
+        isVerified: Bool = false,
+        restartReason: String? = nil
     ) {
         self.artifactID = artifactID
         self.artifactDisplayName = artifactDisplayName
@@ -146,6 +148,7 @@ public struct ModelDownloadFile:
         self.receivedBytes = receivedBytes
         self.etag = etag
         self.isVerified = isVerified
+        self.restartReason = restartReason
     }
 }
 
@@ -162,6 +165,7 @@ public struct ModelDownloadJob:
     public let source: ModelHubSource
     public let repositoryID: String
     public let revision: String
+    public var resolvedRevision: String?
     public let displayName: String
     public let quantization: String?
     public let destinationRelativeDirectory: String
@@ -199,6 +203,7 @@ public struct ModelDownloadJob:
         source: ModelHubSource = .huggingFace,
         repositoryID: String,
         revision: String,
+        resolvedRevision: String? = nil,
         displayName: String,
         quantization: String?,
         destinationRelativeDirectory: String,
@@ -213,6 +218,7 @@ public struct ModelDownloadJob:
         self.source = source
         self.repositoryID = repositoryID
         self.revision = revision
+        self.resolvedRevision = resolvedRevision
         self.displayName = displayName
         self.quantization = quantization
         self.destinationRelativeDirectory =
@@ -230,6 +236,7 @@ public struct ModelDownloadJob:
         case source
         case repositoryID
         case revision
+        case resolvedRevision
         case displayName
         case quantization
         case destinationRelativeDirectory
@@ -260,6 +267,10 @@ public struct ModelDownloadJob:
         revision = try container.decode(
             String.self,
             forKey: .revision
+        )
+        resolvedRevision = try container.decodeIfPresent(
+            String.self,
+            forKey: .resolvedRevision
         )
         displayName = try container.decode(
             String.self,

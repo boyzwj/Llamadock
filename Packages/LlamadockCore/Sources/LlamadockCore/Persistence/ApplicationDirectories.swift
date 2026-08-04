@@ -31,6 +31,24 @@ public struct ApplicationDirectories: Sendable {
         root.appending(path: "profiles", directoryHint: .isDirectory)
     }
 
+    public var serverConfiguration: URL {
+        root.appending(path: "server", directoryHint: .isDirectory)
+    }
+
+    public var modelsPreset: URL {
+        serverConfiguration.appending(
+            path: "models.ini",
+            directoryHint: .notDirectory
+        )
+    }
+
+    public var serverOwnership: URL {
+        serverConfiguration.appending(
+            path: "ownership.json",
+            directoryHint: .notDirectory
+        )
+    }
+
     public var downloads: URL {
         root.appending(path: "downloads", directoryHint: .isDirectory)
     }

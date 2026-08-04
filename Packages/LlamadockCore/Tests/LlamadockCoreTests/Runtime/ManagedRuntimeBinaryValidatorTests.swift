@@ -154,6 +154,11 @@ struct ManagedRuntimeBinaryValidatorTests {
         #expect(record.installedAt == now)
         #expect(record.validatedAt == now)
         #expect(record.versionOutput == "version: 10176")
+        #expect(
+            record.capabilities?.supportedFlags.contains(
+                "--model"
+            ) == true
+        )
     }
 
     private func makeRoot() -> URL {

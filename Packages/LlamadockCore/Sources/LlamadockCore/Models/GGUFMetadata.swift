@@ -199,6 +199,28 @@ public struct GGUFMetadataReader: @unchecked Sendable {
     public func read(
         from fileURL: URL
     ) throws -> GGUFMetadata {
+        try read(
+            from: fileURL,
+            inheritingArchitecture: nil
+        )
+    }
+
+    /// Reads a non-primary GGUF split while inheriting model-level metadata
+    /// that llama.cpp stores only in the first shard.
+    public func readSplitShard(
+        from fileURL: URL,
+        inheritingArchitecture architecture: String
+    ) throws -> GGUFMetadata {
+        try read(
+            from: fileURL,
+            inheritingArchitecture: architecture
+        )
+    }
+
+    private func read(
+        from fileURL: URL,
+        inheritingArchitecture: String?
+    ) throws -> GGUFMetadata {
         let url = fileURL.standardizedFileURL
         let values = try url.resourceValues(
             forKeys: [
@@ -370,10 +392,21 @@ public struct GGUFMetadataReader: @unchecked Sendable {
             }
         }
 
-        guard
-            let architecture = captured.architecture,
-            !architecture.isEmpty
-        else {
+        let shard = try makeShardMetadata(captured)
+        let architecture: String
+        if
+            let capturedArchitecture = captured.architecture,
+            !capturedArchitecture.isEmpty
+        {
+            architecture = capturedArchitecture
+        } else if
+            let inheritingArchitecture,
+            !inheritingArchitecture.isEmpty,
+            let shard,
+            shard.zeroBasedIndex > 0
+        {
+            architecture = inheritingArchitecture
+        } else {
             throw GGUFMetadataError.missingRequiredMetadata(
                 "general.architecture"
             )
@@ -478,7 +511,6 @@ public struct GGUFMetadataReader: @unchecked Sendable {
             }
         }
 
-        let shard = try makeShardMetadata(captured)
         let contextLength = contextLengths[
             "\(architecture).context_length"
         ]

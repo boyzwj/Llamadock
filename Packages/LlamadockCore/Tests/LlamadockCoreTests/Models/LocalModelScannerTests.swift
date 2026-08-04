@@ -131,6 +131,34 @@ struct LocalModelScannerTests {
         #expect(snapshot.issues.first?.rootURL == missing)
     }
 
+    @Test("shows only the primary file for a standard GGUF split")
+    func skipsSecondaryGGUFShards() async throws {
+        let root = try makeDirectory(named: "split")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let primary = root.appending(
+            path: "model-00001-of-00003.gguf"
+        )
+        try minimalGGUF(name: "Split Model").write(to: primary)
+        try Data("secondary shard metadata".utf8).write(
+            to: root.appending(
+                path: "model-00002-of-00003.gguf"
+            )
+        )
+        try Data("secondary shard metadata".utf8).write(
+            to: root.appending(
+                path: "model-00003-of-00003.gguf"
+            )
+        )
+
+        let snapshot = try await LocalModelScanner().scan(
+            roots: [root]
+        )
+
+        #expect(snapshot.models.count == 1)
+        #expect(snapshot.models.first?.url == primary)
+        #expect(snapshot.models.first?.validation == .valid)
+    }
+
     private func makeDirectory(
         named name: String
     ) throws -> URL {

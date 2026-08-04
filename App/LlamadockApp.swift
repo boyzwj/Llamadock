@@ -83,18 +83,18 @@ private struct LlamaDockCommands: Commands {
         }
 
         CommandMenu(localized("Navigate")) {
-            Button(localized("Overview")) {
+            Button(localized("Dashboard")) {
                 appModel.selectedSection = .overview
             }
             .keyboardShortcut("1", modifiers: [.command])
 
-            Button(localized("Service")) {
-                appModel.selectedSection = .service
+            Button(localized("Logs")) {
+                appModel.selectedSection = .logs
             }
             .keyboardShortcut("2", modifiers: [.command])
 
-            Button(localized("Logs")) {
-                appModel.selectedSection = .logs
+            Button(localized("Benchmark")) {
+                appModel.selectedSection = .benchmark
             }
             .keyboardShortcut("3", modifiers: [.command])
 
@@ -112,6 +112,17 @@ private struct LlamaDockCommands: Commands {
                 appModel.selectedSection = .runtimes
             }
             .keyboardShortcut("6", modifiers: [.command])
+
+            Button(localized("Settings")) {
+                appModel.selectedSettingsTab = .global
+                appModel.selectedSection = .settings
+            }
+            .keyboardShortcut("7", modifiers: [.command])
+
+            Button(localized("About")) {
+                appModel.selectedSection = .about
+            }
+            .keyboardShortcut("8", modifiers: [.command])
 
             Divider()
 

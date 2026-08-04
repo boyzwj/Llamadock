@@ -170,9 +170,65 @@ public actor JSONProfileStore {
             )
         }
 
+        if schemaVersion < 3 {
+            if document["router"] == nil {
+                let id = (document["id"] as? String)
+                    .flatMap(UUID.init(uuidString:))
+                    ?? UUID()
+                let name = document["name"] as? String ?? "Model"
+                document["router"] = [
+                    "identifier": RouterModelOptions.defaultIdentifier(
+                        name: name,
+                        id: id
+                    ),
+                    "isEnabled": true,
+                    "loadOnStartup": false,
+                    "stopTimeout": NSNull(),
+                ]
+            }
+        }
+        if schemaVersion < 4 {
+            var server = document["server"] as? [String: Any] ?? [:]
+            if server["contextSize"] == nil
+                || server["contextSize"] is NSNull
+            {
+                server["contextSize"] = GlobalModelOptions.defaultContextSize
+            }
+            if server["cacheTypeK"] == nil
+                || server["cacheTypeK"] is NSNull
+            {
+                server["cacheTypeK"] =
+                    GlobalModelOptions.defaultKVCacheType.rawValue
+            }
+            if server["cacheTypeV"] == nil
+                || server["cacheTypeV"] is NSNull
+            {
+                server["cacheTypeV"] =
+                    GlobalModelOptions.defaultKVCacheType.rawValue
+            }
+            document["server"] = server
+        }
+        if schemaVersion < 5 {
+            var server = document["server"] as? [String: Any] ?? [:]
+            if server["contextSize"] as? Int
+                == GlobalModelOptions.defaultContextSize
+            {
+                server["contextSize"] = NSNull()
+            }
+            if server["cacheTypeK"] as? String
+                == GlobalModelOptions.defaultKVCacheType.rawValue
+            {
+                server["cacheTypeK"] = NSNull()
+            }
+            if server["cacheTypeV"] as? String
+                == GlobalModelOptions.defaultKVCacheType.rawValue
+            {
+                server["cacheTypeV"] = NSNull()
+            }
+            document["server"] = server
+        }
         if schemaVersion < LaunchProfile.currentSchemaVersion {
-            document["schemaVersion"] =
-                LaunchProfile.currentSchemaVersion
+            document["schemaVersion"] = LaunchProfile.currentSchemaVersion
         }
         let normalizedData = try encodedJSON(document)
         let profile = try decoder.decode(
@@ -240,6 +296,12 @@ public actor JSONProfileStore {
             model["draftPath"] = NSNull()
         }
         document["model"] = model
+
+        var router = document["router"] as? [String: Any] ?? [:]
+        if profile.router.stopTimeout == nil {
+            router["stopTimeout"] = NSNull()
+        }
+        document["router"] = router
 
         var server = document["server"] as? [String: Any] ?? [:]
         let optionalServerValues: [(String, Bool)] = [

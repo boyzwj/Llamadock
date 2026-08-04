@@ -116,6 +116,7 @@ public actor JSONModelDownloadStore: ModelDownloadStoring {
                 isSafeRelativePath(
                     job.destinationRelativeDirectory
                 ),
+                job.resolvedRevision.map(isSafeRevision) ?? true,
                 !job.files.isEmpty,
                 Set(job.files.map(\.id)).count
                     == job.files.count
@@ -126,12 +127,22 @@ public actor JSONModelDownloadStore: ModelDownloadStoring {
                 )
             }
             for file in job.files {
+                let restartReasonIsValid: Bool
+                if let reason = file.restartReason {
+                    restartReasonIsValid = [
+                        "checksumMismatch",
+                        "invalidGGUF",
+                    ].contains(reason)
+                } else {
+                    restartReasonIsValid = true
+                }
                 guard
                     isSafeRelativePath(file.repositoryPath),
                     file.expectedSize > 0,
                     file.receivedBytes >= 0,
                     file.receivedBytes <= file.expectedSize,
-                    isValidSHA256(file.expectedSHA256)
+                    isValidSHA256(file.expectedSHA256),
+                    restartReasonIsValid
                 else {
                     throw ModelDownloadStoreError.invalidJob(
                         id: job.id,
@@ -208,6 +219,17 @@ private func isSafeRelativePath(
                 && $0 != ".."
                 && !$0.contains("\\")
         }
+}
+
+private func isSafeRevision(
+    _ value: String
+) -> Bool {
+    !value.isEmpty
+        && value != "."
+        && value != ".."
+        && value.count <= 256
+        && !value.contains("\\")
+        && !value.contains(where: \.isNewline)
 }
 
 private func isValidSHA256(

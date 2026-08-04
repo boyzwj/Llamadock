@@ -3,11 +3,13 @@ import SwiftUI
 
 enum AppSection: String, CaseIterable, Identifiable {
     case overview
-    case service
     case logs
+    case benchmark
     case models
     case downloads
     case runtimes
+    case settings
+    case about
 
     var id: Self { self }
 
@@ -28,23 +30,27 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     var title: LocalizedStringKey {
         switch self {
-        case .overview: "Overview"
-        case .service: "Service"
+        case .overview: "Dashboard"
         case .logs: "Logs"
+        case .benchmark: "Benchmark"
         case .models: "Models"
         case .downloads: "Downloads"
         case .runtimes: "Runtime"
+        case .settings: "Settings"
+        case .about: "About"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .overview: "rectangle.grid.2x2"
-        case .service: "server.rack"
+        case .overview: "gauge.with.dots.needle.67percent"
         case .logs: "text.alignleft"
+        case .benchmark: "speedometer"
         case .models: "externaldrive"
         case .downloads: "arrow.down.circle"
         case .runtimes: "shippingbox"
+        case .settings: "gearshape"
+        case .about: "info.circle"
         }
     }
 

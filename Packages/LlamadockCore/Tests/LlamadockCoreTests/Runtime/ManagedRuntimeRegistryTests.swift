@@ -14,7 +14,11 @@ struct ManagedRuntimeRegistryTests {
         )
         let firstRecord = makeRecord(
             build: 10_175,
-            runtimesRoot: root
+            runtimesRoot: root,
+            capabilities: RuntimeCapabilitiesParser().parse(
+                "--model FNAME --host HOST --port PORT",
+                detectedAt: Date(timeIntervalSince1970: 10_176)
+            )
         )
         let secondRecord = makeRecord(
             build: 10_176,
@@ -352,7 +356,8 @@ struct ManagedRuntimeRegistryTests {
 
     private func makeRecord(
         build: Int,
-        runtimesRoot: URL
+        runtimesRoot: URL,
+        capabilities: RuntimeCapabilities? = nil
     ) -> ManagedRuntimeRecord {
         let tag = "b\(build)"
         let installDirectory = runtimesRoot.appending(
@@ -380,7 +385,8 @@ struct ManagedRuntimeRegistryTests {
                 timeIntervalSince1970: TimeInterval(build + 1)
             ),
             versionOutput: "version: \(build)",
-            archiveSHA256: String(repeating: "a", count: 64)
+            archiveSHA256: String(repeating: "a", count: 64),
+            capabilities: capabilities
         )
     }
 }

@@ -68,6 +68,7 @@ struct JSONProfileStoreTests {
                 with: encoder.encode(legacyProfile)
             ) as? [String: Any]
         )
+        document.removeValue(forKey: "router")
         document["pluginExtension"] = [
             "enabled": true,
         ]
@@ -126,6 +127,91 @@ struct JSONProfileStoreTests {
                     as? [String: Any]
             )?["alias"] is NSNull
         )
+    }
+
+    @Test("migrates model memory defaults to global inheritance")
+    func migratesMemoryDefaults() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(
+                path: "LlamadockProfileTests-\(UUID().uuidString)",
+                directoryHint: .isDirectory
+            )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        var legacyProfile = makeProfile()
+        legacyProfile.schemaVersion = 3
+        legacyProfile.server.contextSize = nil
+        legacyProfile.server.cacheTypeK = nil
+        legacyProfile.server.cacheTypeV = nil
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let profileURL = directory.appending(
+            path: "\(legacyProfile.id.uuidString).json",
+            directoryHint: .notDirectory
+        )
+        try encoder.encode(legacyProfile).write(to: profileURL)
+        let store = JSONProfileStore(directory: directory)
+
+        let migrated = try #require(
+            try await store.load(id: legacyProfile.id)
+        )
+
+        #expect(migrated.schemaVersion == 5)
+        #expect(migrated.server.contextSize == nil)
+        #expect(migrated.server.cacheTypeK == nil)
+        #expect(migrated.server.cacheTypeV == nil)
+        let persisted = try #require(
+            JSONSerialization.jsonObject(
+                with: Data(contentsOf: profileURL)
+            ) as? [String: Any]
+        )
+        let server = try #require(
+            persisted["server"] as? [String: Any]
+        )
+        #expect(persisted["schemaVersion"] as? Int == 5)
+        #expect(server["contextSize"] is NSNull)
+        #expect(server["cacheTypeK"] is NSNull)
+        #expect(server["cacheTypeV"] is NSNull)
+    }
+
+    @Test("preserves explicit model overrides during global migration")
+    func preservesModelOverridesDuringGlobalMigration() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(
+                path: "LlamadockProfileTests-\(UUID().uuidString)",
+                directoryHint: .isDirectory
+            )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        var legacyProfile = makeProfile()
+        legacyProfile.schemaVersion = 4
+        legacyProfile.server.contextSize = 131_072
+        legacyProfile.server.cacheTypeK = "f16"
+        legacyProfile.server.cacheTypeV = "q4_0"
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let profileURL = directory.appending(
+            path: "\(legacyProfile.id.uuidString).json",
+            directoryHint: .notDirectory
+        )
+        try encoder.encode(legacyProfile).write(to: profileURL)
+
+        let migrated = try #require(
+            try await JSONProfileStore(directory: directory).load(
+                id: legacyProfile.id
+            )
+        )
+
+        #expect(migrated.schemaVersion == 5)
+        #expect(migrated.server.contextSize == 131_072)
+        #expect(migrated.server.cacheTypeK == "f16")
+        #expect(migrated.server.cacheTypeV == "q4_0")
     }
 
     @Test("deletes only the requested profile file")

@@ -117,6 +117,36 @@
         }
       }
     },
+    "%@ — %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ — %2$@"
+          }
+        }
+      }
+    },
+    "%lld / %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld / %2$lld"
+          }
+        }
+      }
+    },
+    "%lld CPU cores • %@ memory" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 个 CPU 核心 • %2$@ 内存"
+          }
+        }
+      }
+    },
     "%lld active downloads • %lld completed" : {
       "localizations" : {
         "en" : {
@@ -145,6 +175,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld 个活动下载 • 共 %2$lld 个"
+          }
+        }
+      }
+    },
+    "%lld enabled" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已启用 %lld 个"
+          }
+        }
+      }
+    },
+    "%lld enabled • %lld loaded" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已启用 %lld 个 • 已加载 %lld 个"
           }
         }
       }
@@ -257,6 +307,16 @@
         }
       }
     },
+    "%lld requests" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个请求"
+          }
+        }
+      }
+    },
     "%lld saved %@. The most recently edited profile appears first." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -304,12 +364,55 @@
         }
       }
     },
+    "%lld trials" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 轮测试"
+          }
+        }
+      }
+    },
+    "%lld trials • up to %@ context • %lld output tokens" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 轮测试 • 最大 %2$@ 上下文 • %3$lld 个输出 token"
+          }
+        }
+      }
+    },
+    "0.0.0.0 (All networks)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0.0.0.0（所有网络）"
+          }
+        }
+      }
+    },
     "1. Choose a Runtime" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "1. 选择运行时"
+          }
+        }
+      }
+    },
+    "10" : {
+
+    },
+    "127.0.0.1 (Local only)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "127.0.0.1（仅本机）"
           }
         }
       }
@@ -324,6 +427,16 @@
         }
       }
     },
+    "3. Configure Model Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3. 配置模型设置"
+          }
+        }
+      }
+    },
     "3. Review the Profile" : {
       "localizations" : {
         "zh-Hans" : {
@@ -333,6 +446,9 @@
           }
         }
       }
+    },
+    "4" : {
+
     },
     "4. Start the Service" : {
       "localizations" : {
@@ -414,12 +530,32 @@
         }
       }
     },
+    "API Model Identifier" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 模型标识"
+          }
+        }
+      }
+    },
     "About" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "关于"
+          }
+        }
+      }
+    },
+    "About LlamaDock" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关于 LlamaDock"
           }
         }
       }
@@ -506,12 +642,32 @@
         }
       }
     },
+    "Actual Prompt" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实际提示词"
+          }
+        }
+      }
+    },
     "Adapter" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "适配器"
+          }
+        }
+      }
+    },
+    "Add Configured Model" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加已配置模型"
           }
         }
       }
@@ -566,12 +722,32 @@
         }
       }
     },
+    "Add Model Setting" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加模型设置"
+          }
+        }
+      }
+    },
     "Add a Hugging Face token in Settings before downloading this restricted repository." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "下载此受限仓库前，请在设置中添加 Hugging Face 令牌。"
+          }
+        }
+      }
+    },
+    "Add a validated local GGUF model, then configure how llama-server loads it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加已验证的本地 GGUF 模型，然后配置 llama-server 的加载方式。"
           }
         }
       }
@@ -636,6 +812,26 @@
         }
       }
     },
+    "Also configure companion models, generation defaults, prompts, and raw arguments." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同时配置伴随模型、生成默认值、提示词和原始参数。"
+          }
+        }
+      }
+    },
+    "Also tune threads, batching, cache types, and unload behavior." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同时调整线程、批处理、缓存类型和卸载行为。"
+          }
+        }
+      }
+    },
     "An unexpected error occurred." : {
       "localizations" : {
         "zh-Hans" : {
@@ -676,6 +872,26 @@
         }
       }
     },
+    "Apple silicon (arm64)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 芯片（arm64）"
+          }
+        }
+      }
+    },
+    "Applied by llama-server when a client does not replace it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当客户端未覆盖时，由 llama-server 应用。"
+          }
+        }
+      }
+    },
     "Architecture" : {
       "localizations" : {
         "zh-Hans" : {
@@ -696,12 +912,62 @@
         }
       }
     },
+    "At Startup" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动时加载"
+          }
+        }
+      }
+    },
+    "Attach optional GGUF files only when the main model requires them." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅在主模型需要时附加可选的 GGUF 文件。"
+          }
+        }
+      }
+    },
+    "Automatically load an available model when an API request selects it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当 API 请求选择可用模型时自动加载。"
+          }
+        }
+      }
+    },
     "Auxiliary" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "辅助文件"
+          }
+        }
+      }
+    },
+    "Availability" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可用方式"
+          }
+        }
+      }
+    },
+    "Available" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可用"
           }
         }
       }
@@ -726,12 +992,72 @@
         }
       }
     },
+    "Batch Output TPS" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "批量输出 TPS"
+          }
+        }
+      }
+    },
     "Batch Size" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "批处理大小"
+          }
+        }
+      }
+    },
+    "Benchmark" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "性能测试"
+          }
+        }
+      }
+    },
+    "Benchmark Configuration" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测试配置"
+          }
+        }
+      }
+    },
+    "Best Batch Output" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最佳批量输出"
+          }
+        }
+      }
+    },
+    "Best Generation Throughput" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最佳生成吞吐量"
+          }
+        }
+      }
+    },
+    "Best Prompt Throughput" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最佳提示词吞吐量"
           }
         }
       }
@@ -766,6 +1092,16 @@
         }
       }
     },
+    "Browse Model Library…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览模型库…"
+          }
+        }
+      }
+    },
     "Browse Models" : {
       "localizations" : {
         "zh-Hans" : {
@@ -776,12 +1112,62 @@
         }
       }
     },
+    "Browse an online model source, choose a complete GGUF artifact, and add it to this queue." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览在线模型源，选择一个完整的 GGUF 构件并将其加入下载队列。"
+          }
+        }
+      }
+    },
+    "Browse local GGUF models, manage llama-server configurations, run multiple routed models, and measure real inference throughput from one native app." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在一个原生应用中浏览本地 GGUF 模型、管理 llama-server 配置、运行多个路由模型，并测量真实推理吞吐量。"
+          }
+        }
+      }
+    },
+    "Bugs and feature requests" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bug 与功能建议"
+          }
+        }
+      }
+    },
+    "Built On" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "构建基础"
+          }
+        }
+      }
+    },
     "CPU" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "CPU"
+          }
+        }
+      }
+    },
+    "CPU worker threads." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CPU 工作线程数。"
           }
         }
       }
@@ -816,6 +1202,16 @@
         }
       }
     },
+    "Cannot build llama-server config: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法生成 llama-server 配置：%@"
+          }
+        }
+      }
+    },
     "Capabilities unknown" : {
       "localizations" : {
         "zh-Hans" : {
@@ -832,6 +1228,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新日志"
+          }
+        }
+      }
+    },
+    "Changes are saved globally. Restart the service to apply them." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更改已全局保存。重启服务后生效。"
           }
         }
       }
@@ -896,12 +1302,32 @@
         }
       }
     },
+    "Choose Runtime" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择运行时"
+          }
+        }
+      }
+    },
     "Choose a .gguf model file." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "请选择 .gguf 模型文件。"
+          }
+        }
+      }
+    },
+    "Choose a Configured Model" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择一个已配置模型"
           }
         }
       }
@@ -986,6 +1412,16 @@
         }
       }
     },
+    "Choose a local GGUF model to make it available through llama-server." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择本地 GGUF 模型，使其可通过 llama-server 使用。"
+          }
+        }
+      }
+    },
     "Choose a main artifact. Companion selection is managed with its main model." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1012,6 +1448,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择配置"
+          }
+        }
+      }
+    },
+    "Choose a runtime and enable a model setting." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请选择运行时并启用一项模型设置。"
           }
         }
       }
@@ -1116,6 +1562,26 @@
         }
       }
     },
+    "Choose local-only access or expose the router to the network." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择仅本机访问，或将路由服务开放至网络。"
+          }
+        }
+      }
+    },
+    "Choose whether this model is hidden, loaded when requested, or kept ready from startup." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择隐藏此模型、在请求时加载，或从服务启动时保持就绪。"
+          }
+        }
+      }
+    },
     "Choose…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1156,6 +1622,56 @@
         }
       }
     },
+    "Clear Results" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除结果"
+          }
+        }
+      }
+    },
+    "Clear Search" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除搜索"
+          }
+        }
+      }
+    },
+    "Clients send this value as the model name. Keep it short, unique, and stable." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "客户端会将此值作为模型名称发送。请保持简短、唯一且稳定。"
+          }
+        }
+      }
+    },
+    "Companion Models" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "伴随模型"
+          }
+        }
+      }
+    },
+    "Compatible with the selected runtime." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与所选运行时兼容。"
+          }
+        }
+      }
+    },
     "Complete" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1186,12 +1702,62 @@
         }
       }
     },
+    "Concurrency" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "并发数"
+          }
+        }
+      }
+    },
+    "Concurrent requests exercise llama-server continuous batching." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "并发请求用于测试 llama-server 的连续批处理能力。"
+          }
+        }
+      }
+    },
+    "Configuration Detail" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置详细程度"
+          }
+        }
+      }
+    },
+    "Configuration detail level" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置详细程度"
+          }
+        }
+      }
+    },
     "Configured" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "已配置"
+          }
+        }
+      }
+    },
+    "Configured Models" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已配置模型"
           }
         }
       }
@@ -1216,12 +1782,32 @@
         }
       }
     },
+    "Context Lengths" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上下文长度"
+          }
+        }
+      }
+    },
     "Context Size" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "上下文大小"
+          }
+        }
+      }
+    },
+    "Control dynamic model loading for the single llama-server process." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "控制单个 llama-server 进程中的动态模型加载。"
           }
         }
       }
@@ -1242,6 +1828,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "复制命令"
+          }
+        }
+      }
+    },
+    "Copy Config" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制配置"
           }
         }
       }
@@ -1416,6 +2012,16 @@
         }
       }
     },
+    "Could not recover the previous llama-server process." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法恢复并清理上次遗留的 llama-server 进程。"
+          }
+        }
+      }
+    },
     "Could not refresh the local model library: %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1526,6 +2132,16 @@
         }
       }
     },
+    "Current Environment" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前环境"
+          }
+        }
+      }
+    },
     "Custom" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1542,6 +2158,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "调试"
+          }
+        }
+      }
+    },
+    "Dashboard" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仪表盘"
+          }
+        }
+      }
+    },
+    "Default 39281. Valid range 1–65535." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认 39281。有效范围为 1–65535。"
           }
         }
       }
@@ -1586,12 +2222,32 @@
         }
       }
     },
+    "Delete Configuration" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除配置"
+          }
+        }
+      }
+    },
     "Delete Managed Runtime?" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除托管运行时？"
+          }
+        }
+      }
+    },
+    "Delete Model Configuration?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除模型配置？"
           }
         }
       }
@@ -1606,12 +2262,12 @@
         }
       }
     },
-    "Delete unfinished files and remove this failed task." : {
+    "Delete unfinished files and remove this download task." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "删除未完成文件并从队列中移除此失败任务。"
+            "value" : "删除未完成文件并从队列中移除此下载任务。"
           }
         }
       }
@@ -1642,6 +2298,56 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "诊断信息已复制"
+          }
+        }
+      }
+    },
+    "Disabled" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已停用"
+          }
+        }
+      }
+    },
+    "Discard very unlikely tokens." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "舍弃可能性很低的 token。"
+          }
+        }
+      }
+    },
+    "Discourage repeated output." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "降低重复输出的倾向。"
+          }
+        }
+      }
+    },
+    "Display Name" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示名称"
+          }
+        }
+      }
+    },
+    "Documentation" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文档"
           }
         }
       }
@@ -1756,6 +2462,16 @@
         }
       }
     },
+    "Duplicate Configuration" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制配置"
+          }
+        }
+      }
+    },
     "ERR" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1776,12 +2492,72 @@
         }
       }
     },
+    "Each selection creates one trial per concurrency level." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每个选项都会按所选并发级别分别执行一轮测试。"
+          }
+        }
+      }
+    },
     "Edit Profile" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "编辑配置"
+          }
+        }
+      }
+    },
+    "Enable at least one model in Model Settings before running a benchmark." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行性能测试前，请先在模型设置中启用至少一个模型。"
+          }
+        }
+      }
+    },
+    "Enable at least one model setting before starting the server." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动服务器前，请至少启用一个模型配置。"
+          }
+        }
+      }
+    },
+    "Enable model autoload" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用模型自动加载"
+          }
+        }
+      }
+    },
+    "Enabled Models" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已启用模型"
+          }
+        }
+      }
+    },
+    "Enables image input for a compatible multimodal model." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为兼容的多模态模型启用图像输入。"
           }
         }
       }
@@ -1832,6 +2608,16 @@
         }
       }
     },
+    "Essentials" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常用"
+          }
+        }
+      }
+    },
     "Every file declares a Hub LFS SHA-256 digest; all files also receive bounded GGUF structure validation." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1842,12 +2628,42 @@
         }
       }
     },
+    "Everyday Performance" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常用性能设置"
+          }
+        }
+      }
+    },
     "Examples: Qwen GGUF, bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M, or a huggingface.co repository URL." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "示例：Qwen GGUF、bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M，或 huggingface.co 仓库 URL。"
+          }
+        }
+      }
+    },
+    "Examples: Qwen GGUF, unsloth/DeepSeek-R1-GGUF:Q4_K_M, or a modelscope.cn repository URL." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "示例：Qwen GGUF、unsloth/DeepSeek-R1-GGUF:Q4_K_M，或 modelscope.cn 仓库 URL。"
+          }
+        }
+      }
+    },
+    "Expert" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "专家"
           }
         }
       }
@@ -1868,6 +2684,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "导出所选配置…"
+          }
+        }
+      }
+    },
+    "Export…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出…"
           }
         }
       }
@@ -1978,6 +2804,16 @@
         }
       }
     },
+    "For llama-server flags that are not available above." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用于上方未提供的 llama-server 参数。"
+          }
+        }
+      }
+    },
     "GGUF" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2038,12 +2874,112 @@
         }
       }
     },
+    "Generated Configuration" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成的配置"
+          }
+        }
+      }
+    },
+    "Generated llama-server Config" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成的 llama-server 配置"
+          }
+        }
+      }
+    },
+    "Generation Length" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成长度"
+          }
+        }
+      }
+    },
+    "Generation TPS" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成 TPS"
+          }
+        }
+      }
+    },
+    "GitHub" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub"
+          }
+        }
+      }
+    },
+    "Global Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全局设置"
+          }
+        }
+      }
+    },
+    "Global changes are saved immediately and apply after the router is restarted." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全局更改会立即保存，并在路由重启后生效。"
+          }
+        }
+      }
+    },
+    "Global router configuration and per-model startup parameters" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全局路由配置与各模型启动参数"
+          }
+        }
+      }
+    },
+    "Hardware" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "硬件"
+          }
+        }
+      }
+    },
     "Health check degraded: %@" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "健康检查降级：%@"
+          }
+        }
+      }
+    },
+    "Higher values increase variety." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "值越高，输出变化越丰富。"
           }
         }
       }
@@ -2084,6 +3020,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hugging Face 访问令牌"
+          }
+        }
+      }
+    },
+    "Hugging Face and ModelScope download queue" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hugging Face 与 ModelScope 下载队列"
           }
         }
       }
@@ -2154,6 +3100,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在导入"
+          }
+        }
+      }
+    },
+    "Import…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入…"
+          }
+        }
+      }
+    },
+    "Include in llama-server config" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含在 llama-server 配置中"
           }
         }
       }
@@ -2258,6 +3224,16 @@
         }
       }
     },
+    "Intel (x86_64)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intel（x86_64）"
+          }
+        }
+      }
+    },
     "Invalid" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2308,6 +3284,16 @@
         }
       }
     },
+    "Key cache data type." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key 缓存的数据类型。"
+          }
+        }
+      }
+    },
     "Language" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2354,6 +3340,56 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "启动配置"
+          }
+        }
+      }
+    },
+    "Leave empty to use the model and client defaults." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "留空以使用模型和客户端默认值。"
+          }
+        }
+      }
+    },
+    "Leave values empty to use the llama.cpp runtime defaults." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "留空以使用 llama.cpp 运行时默认值。"
+          }
+        }
+      }
+    },
+    "Limit choices to the most likely tokens." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将选择限制在概率最高的 token 中。"
+          }
+        }
+      }
+    },
+    "Listen Address" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "监听地址"
+          }
+        }
+      }
+    },
+    "Listen Port" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "监听端口"
           }
         }
       }
@@ -2428,12 +3464,42 @@
         }
       }
     },
+    "LlamaDock currently downloads public ModelScope repositories without credentials. Private or gated ModelScope repositories are not yet supported." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LlamaDock 目前无需凭据即可下载公开的 ModelScope 仓库，暂不支持私有或受限的 ModelScope 仓库。"
+          }
+        }
+      }
+    },
+    "LlamaDock currently supports public ModelScope repositories. Choose a public repository to download." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LlamaDock 目前支持公开的 ModelScope 仓库。请选择公开仓库进行下载。"
+          }
+        }
+      }
+    },
     "LlamaDock follows macOS Reduce Motion, Increase Contrast, keyboard navigation, and VoiceOver settings." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "LlamaDock 会遵循 macOS 的减弱动态效果、增强对比度、键盘导航和 VoiceOver 设置。"
+          }
+        }
+      }
+    },
+    "LlamaDock is open-source software. Copyright © LlamaDock contributors." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LlamaDock 是开源软件。版权所有 © LlamaDock 贡献者。"
           }
         }
       }
@@ -2504,6 +3570,66 @@
         }
       }
     },
+    "LlamaDock writes a fresh models.ini immediately before every start." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LlamaDock 会在每次启动前即时写入新的 models.ini。"
+          }
+        }
+      }
+    },
+    "Load on Request" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按请求加载"
+          }
+        }
+      }
+    },
+    "Load when the router starts" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "路由启动时加载"
+          }
+        }
+      }
+    },
+    "Loaded" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已加载"
+          }
+        }
+      }
+    },
+    "Loaded Models" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已加载模型"
+          }
+        }
+      }
+    },
+    "Loading" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在加载"
+          }
+        }
+      }
+    },
     "Loading release details…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2524,12 +3650,32 @@
         }
       }
     },
+    "Local GGUF library, Hugging Face, and ModelScope" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地 GGUF 模型库、Hugging Face 与 ModelScope"
+          }
+        }
+      }
+    },
     "Local Library" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "本地模型库"
+          }
+        }
+      }
+    },
+    "Local inference runtime and server" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地推理运行时与服务"
           }
         }
       }
@@ -2560,6 +3706,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "日志"
+          }
+        }
+      }
+    },
+    "Lowest TPOT" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最低 TPOT"
+          }
+        }
+      }
+    },
+    "MIT License" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MIT 许可证"
           }
         }
       }
@@ -2604,6 +3770,46 @@
         }
       }
     },
+    "Maximum Loaded Models" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最大已加载模型数"
+          }
+        }
+      }
+    },
+    "Maximum logical prompt batch." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提示词的最大逻辑批大小。"
+          }
+        }
+      }
+    },
+    "Maximum tokens the model can consider at once. Larger contexts use more memory." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型一次可处理的最大 token 数；上下文越大，占用内存越多。"
+          }
+        }
+      }
+    },
+    "Measure llama-server prompt processing, generation, and continuous-batch throughput." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测量 llama-server 的提示词处理、生成与连续批处理吞吐量。"
+          }
+        }
+      }
+    },
     "Memory" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2644,6 +3850,26 @@
         }
       }
     },
+    "Model Availability" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型可用方式"
+          }
+        }
+      }
+    },
+    "Model File" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型文件"
+          }
+        }
+      }
+    },
     "Model Library" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2664,12 +3890,32 @@
         }
       }
     },
+    "Model Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型设置"
+          }
+        }
+      }
+    },
     "Model Source" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "模型来源"
+          }
+        }
+      }
+    },
+    "Model Startup Parameters" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型启动参数"
           }
         }
       }
@@ -2694,6 +3940,26 @@
         }
       }
     },
+    "Model name, owner/repository, or modelscope.cn URL" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型名称、所有者/仓库或 modelscope.cn URL"
+          }
+        }
+      }
+    },
+    "ModelScope" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ModelScope"
+          }
+        }
+      }
+    },
     "Models" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2704,12 +3970,32 @@
         }
       }
     },
+    "Models allowed in memory at the same time. Use 0 for unlimited." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许同时驻留内存的模型数；设为 0 表示不限制。"
+          }
+        }
+      }
+    },
     "More" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "更多"
+          }
+        }
+      }
+    },
+    "More Actions" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多操作"
           }
         }
       }
@@ -2754,6 +4040,56 @@
         }
       }
     },
+    "Multi-model Router" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "多模型路由"
+          }
+        }
+      }
+    },
+    "Multi-model llama.cpp router control" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "多模型 llama.cpp 路由控制"
+          }
+        }
+      }
+    },
+    "Names and File" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名称与文件"
+          }
+        }
+      }
+    },
+    "Native macOS interface" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原生 macOS 界面"
+          }
+        }
+      }
+    },
+    "Native multi-model control for llama.cpp on macOS" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 上原生的 llama.cpp 多模型控制工具"
+          }
+        }
+      }
+    },
     "Navigate" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2784,12 +4120,32 @@
         }
       }
     },
-    "No changelog was provided for this release." : {
+    "New configurations use a memory-safe 32K context by default." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此版本未提供更新日志。"
+            "value" : "新配置默认使用更节省内存的 32K 上下文。"
+          }
+        }
+      }
+    },
+    "No Benchmark Results" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无测试结果"
+          }
+        }
+      }
+    },
+    "No Configured Models" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无已配置模型"
           }
         }
       }
@@ -2844,6 +4200,16 @@
         }
       }
     },
+    "No Model Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无模型设置"
+          }
+        }
+      }
+    },
     "No SHA-256 digest declared by the Hub." : {
       "localizations" : {
         "zh-Hans" : {
@@ -2870,6 +4236,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "没有已验证的运行时"
+          }
+        }
+      }
+    },
+    "No changelog was provided for this release." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此版本未提供更新日志。"
           }
         }
       }
@@ -2934,6 +4310,16 @@
         }
       }
     },
+    "No validated local models" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有已验证的本地模型"
+          }
+        }
+      }
+    },
     "Not configured" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2950,6 +4336,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未声明"
+          }
+        }
+      }
+    },
+    "Number of model layers offloaded to the GPU. Leave empty unless you need manual control." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "卸载到 GPU 的模型层数；除非需要手动控制，否则请留空。"
           }
         }
       }
@@ -3004,6 +4400,46 @@
         }
       }
     },
+    "On Demand" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按需加载"
+          }
+        }
+      }
+    },
+    "One endpoint shared by every configured model." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有已配置模型共用一个服务端点。"
+          }
+        }
+      }
+    },
+    "One or more enabled model files no longer exist." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一个或多个已启用的模型文件已不存在。"
+          }
+        }
+      }
+    },
+    "Open Dashboard" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 Dashboard"
+          }
+        }
+      }
+    },
     "Open Download Queue" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3040,6 +4476,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开 GGUF…"
+          }
+        }
+      }
+    },
+    "Open Model Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开模型设置"
           }
         }
       }
@@ -3094,6 +4540,16 @@
         }
       }
     },
+    "Open Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开设置"
+          }
+        }
+      }
+    },
     "Open WebUI" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3110,6 +4566,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开 GGUF 模型"
+          }
+        }
+      }
+    },
+    "Open on %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 %@ 中打开"
           }
         }
       }
@@ -3140,6 +4606,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "可选配套文件"
+          }
+        }
+      }
+    },
+    "Optional smaller model used for speculative decoding." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用于推测解码的可选小型模型。"
+          }
+        }
+      }
+    },
+    "Output" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输出"
           }
         }
       }
@@ -3234,12 +4720,42 @@
         }
       }
     },
+    "Performance Summary" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "性能摘要"
+          }
+        }
+      }
+    },
+    "Performance Tuning" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "性能调优"
+          }
+        }
+      }
+    },
     "Permanently delete this inactive managed runtime." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "永久删除此未激活的托管运行时。"
+          }
+        }
+      }
+    },
+    "Physical batch used per compute step." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每个计算步骤使用的物理批大小。"
           }
         }
       }
@@ -3264,6 +4780,16 @@
         }
       }
     },
+    "Portable model file format" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可移植模型文件格式"
+          }
+        }
+      }
+    },
     "Present" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3280,6 +4806,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上一个"
+          }
+        }
+      }
+    },
+    "Probability-mass sampling cutoff." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按累计概率质量截断采样。"
           }
         }
       }
@@ -3354,12 +4890,52 @@
         }
       }
     },
+    "Project" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "项目"
+          }
+        }
+      }
+    },
+    "Project, version, license, and runtime information." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "项目、版本、许可证与运行环境信息。"
+          }
+        }
+      }
+    },
     "Prompt" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "提示词"
+          }
+        }
+      }
+    },
+    "Prompt TPS" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提示词 TPS"
+          }
+        }
+      }
+    },
+    "Prompt and generation rates come from llama-server timings; batch output is measured across wall-clock time." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提示词与生成速率来自 llama-server timings；批量输出速率按实际经过时间计算。"
           }
         }
       }
@@ -3380,6 +4956,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "公开仓库"
+          }
+        }
+      }
+    },
+    "Published" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发布时间"
           }
         }
       }
@@ -3420,16 +5006,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "退出 LlamaDock"
-          }
-        }
-      }
-    },
-    "Published" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "发布时间"
           }
         }
       }
@@ -3514,6 +5090,16 @@
         }
       }
     },
+    "Releases" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发行版本"
+          }
+        }
+      }
+    },
     "Remove Token" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3550,6 +5136,56 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "替换令牌"
+          }
+        }
+      }
+    },
+    "Report an Issue" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "报告问题"
+          }
+        }
+      }
+    },
+    "Requested output tokens per request." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每个请求预期生成的输出 token 数。"
+          }
+        }
+      }
+    },
+    "Requests are routed by the API model identifier. Enabled models are written as separate sections in models.ini." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请求按 API 模型标识路由；已启用模型会分别写入 models.ini 的独立节。"
+          }
+        }
+      }
+    },
+    "Requests are routed by the model identifier." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请求按照模型标识符进行路由。"
+          }
+        }
+      }
+    },
+    "Requests processed concurrently." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可并发处理的请求数。"
           }
         }
       }
@@ -3610,6 +5246,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新启动受管 llama-server 进程。"
+          }
+        }
+      }
+    },
+    "Restore Safe Defaults" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复安全默认值"
           }
         }
       }
@@ -3714,12 +5360,52 @@
         }
       }
     },
+    "Router" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "路由"
+          }
+        }
+      }
+    },
+    "Router State" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "路由状态"
+          }
+        }
+      }
+    },
     "Run" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "运行"
+          }
+        }
+      }
+    },
+    "Run Benchmark" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行性能测试"
+          }
+        }
+      }
+    },
+    "Running throughput sweep…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在执行吞吐量测试…"
           }
         }
       }
@@ -3740,6 +5426,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "运行时和模型已就绪，可以启动服务器。"
+          }
+        }
+      }
+    },
+    "Runtime and model config are ready. Start the multi-model router when needed." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行时和模型配置已就绪，可按需启动多模型路由。"
           }
         }
       }
@@ -3864,12 +5560,32 @@
         }
       }
     },
+    "Sampling Defaults" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "采样默认值"
+          }
+        }
+      }
+    },
     "Save Token" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存令牌"
+          }
+        }
+      }
+    },
+    "Saved automatically" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已自动保存"
           }
         }
       }
@@ -3921,12 +5637,32 @@
         }
       }
     },
+    "Search configured models" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索已配置模型"
+          }
+        }
+      }
+    },
     "Search local models" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜索本地模型"
+          }
+        }
+      }
+    },
+    "Search public GGUF repositories on ModelScope or paste a modelscope.cn repository URL." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索 ModelScope 上的公开 GGUF 仓库，或粘贴 modelscope.cn 仓库 URL。"
           }
         }
       }
@@ -3941,6 +5677,16 @@
         }
       }
     },
+    "Searching %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在搜索 %@"
+          }
+        }
+      }
+    },
     "Searching Hugging Face" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3951,12 +5697,32 @@
         }
       }
     },
+    "Seconds allowed for a clean model unload." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许模型正常卸载的秒数。"
+          }
+        }
+      }
+    },
     "Seed" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "随机种子"
+          }
+        }
+      }
+    },
+    "Select a GGUF file to inspect its metadata and current router state." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择一个 GGUF 文件以查看元数据和当前路由状态。"
           }
         }
       }
@@ -3977,6 +5743,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "从边栏中选择目标。"
+          }
+        }
+      }
+    },
+    "Select a model on the left to review its availability, API name, and performance settings." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择左侧模型以查看其可用方式、API 名称和性能设置。"
           }
         }
       }
@@ -4017,6 +5793,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "服务器日志"
+          }
+        }
+      }
+    },
+    "Server defaults and individual model behavior" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器默认设置与各模型行为"
           }
         }
       }
@@ -4081,12 +5867,62 @@
         }
       }
     },
+    "Set availability, names, context size, and GPU offload." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置可用方式、名称、上下文大小和 GPU 卸载。"
+          }
+        }
+      }
+    },
+    "Set server-side generation defaults only when API clients do not provide their own values." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅在 API 客户端未提供值时设置服务器端生成默认值。"
+          }
+        }
+      }
+    },
+    "Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置"
+          }
+        }
+      }
+    },
+    "Settings Area" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置区域"
+          }
+        }
+      }
+    },
     "Settings…" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "设置…"
+          }
+        }
+      }
+    },
+    "Setup and usage guide" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装与使用指南"
           }
         }
       }
@@ -4157,12 +5993,62 @@
         }
       }
     },
+    "Shown only in LlamaDock. Rename it to distinguish configurations for the same model." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅显示在 LlamaDock 中。可重命名以区分同一模型的不同配置。"
+          }
+        }
+      }
+    },
     "Simplified Chinese" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "简体中文"
+          }
+        }
+      }
+    },
+    "Single" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "单请求"
+          }
+        }
+      }
+    },
+    "Sleeping" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "休眠"
+          }
+        }
+      }
+    },
+    "Source code and project" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "源代码与项目主页"
+          }
+        }
+      }
+    },
+    "Source: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来源：%@"
           }
         }
       }
@@ -4197,6 +6083,36 @@
         }
       }
     },
+    "Start the LlamaDock server, choose a model and workload, then run a local throughput sweep." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动 LlamaDock 服务，选择模型和工作负载，然后运行本地吞吐量测试。"
+          }
+        }
+      }
+    },
+    "Start the configured multi-model router." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动已配置的多模型路由服务。"
+          }
+        }
+      }
+    },
+    "Start the multi-model server before running a benchmark." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先启动多模型服务，再运行性能测试。"
+          }
+        }
+      }
+    },
     "Start the selected launch profile." : {
       "localizations" : {
         "zh-Hans" : {
@@ -4223,6 +6139,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "状态"
+          }
+        }
+      }
+    },
+    "Status is reported by the running llama-server /models endpoint." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "状态由运行中的 llama-server /models 端点返回。"
           }
         }
       }
@@ -4287,6 +6213,16 @@
         }
       }
     },
+    "Stop the server before deleting a model setting used by its generated config." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除生成配置中使用的模型设置前，请先停止服务器。"
+          }
+        }
+      }
+    },
     "Stop the server before deleting its profile." : {
       "localizations" : {
         "zh-Hans" : {
@@ -4347,12 +6283,62 @@
         }
       }
     },
+    "SwiftUI" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SwiftUI"
+          }
+        }
+      }
+    },
+    "Synthetic prompts stay on this Mac. Larger contexts and higher concurrency can consume substantial memory." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "合成提示词仅在本机处理。更大的上下文与更高并发可能消耗大量内存。"
+          }
+        }
+      }
+    },
+    "System" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统"
+          }
+        }
+      }
+    },
     "System Prompt" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "系统提示词"
+          }
+        }
+      }
+    },
+    "TPOT" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TPOT"
+          }
+        }
+      }
+    },
+    "Technical preview of the configuration LlamaDock will use." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LlamaDock 将使用的配置技术预览。"
           }
         }
       }
@@ -4383,6 +6369,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "API 和内置 WebUI 可以访问。"
+          }
+        }
+      }
+    },
+    "The GGUF file used by this configuration." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此配置使用的 GGUF 文件。"
+          }
+        }
+      }
+    },
+    "The MIT License permits use, copying, modification, distribution, and private or commercial use subject to its copyright and license notice." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MIT 许可证允许使用、复制、修改与分发，包括私人或商业用途，但须保留版权与许可证声明。"
           }
         }
       }
@@ -4437,6 +6443,16 @@
         }
       }
     },
+    "The multi-model API and built-in WebUI are reachable." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "多模型 API 与内置 WebUI 均可访问。"
+          }
+        }
+      }
+    },
     "The previous runtime is retained for one-click rollback." : {
       "localizations" : {
         "zh-Hans" : {
@@ -4463,6 +6479,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "所选 GGUF 模型已不存在。"
+          }
+        }
+      }
+    },
+    "The selected llama-server must support multi-model presets." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选 llama-server 必须支持多模型预设。"
           }
         }
       }
@@ -4547,6 +6573,26 @@
         }
       }
     },
+    "These controls are useful for benchmarking or solving memory and throughput issues." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这些控件适合用于性能测试，或排查内存与吞吐量问题。"
+          }
+        }
+      }
+    },
+    "These settings apply to every model profile." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这些设置适用于所有模型配置。"
+          }
+        }
+      }
+    },
     "This GGUF file is invalid and cannot be used to create a launch profile." : {
       "localizations" : {
         "zh-Hans" : {
@@ -4567,12 +6613,22 @@
         }
       }
     },
-    "This permanently deletes unfinished files for %@ and removes the failed task from the download queue. This cannot be undone." : {
+    "This model is not included in the generated llama-server config." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此操作将永久删除 %@ 的未完成文件，并从下载队列中移除失败任务。此操作无法撤销。"
+            "value" : "此模型未包含在生成的 llama-server 配置中。"
+          }
+        }
+      }
+    },
+    "This permanently deletes unfinished files for %@ and removes the task from the download queue. This cannot be undone." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此操作将永久删除 %@ 的未完成文件，并从下载队列中移除该任务。此操作无法撤销。"
           }
         }
       }
@@ -4583,6 +6639,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这会从 LlamaDock 的托管运行时目录中永久移除 %@。当前和上一个运行时始终会保留，以确保服务连续性和支持回滚。"
+          }
+        }
+      }
+    },
+    "This removes only the saved configuration for %@. The GGUF model file is not deleted." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这只会移除 %@ 的已保存配置，不会删除 GGUF 模型文件。"
           }
         }
       }
@@ -4627,6 +6693,26 @@
         }
       }
     },
+    "Throughput Benchmark" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "吞吐量测试"
+          }
+        }
+      }
+    },
+    "Tokens" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token 数"
+          }
+        }
+      }
+    },
     "Top K" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4657,6 +6743,16 @@
         }
       }
     },
+    "Trial Results" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测试结果"
+          }
+        }
+      }
+    },
     "Try a Small Test Repository" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4673,6 +6769,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未知"
+          }
+        }
+      }
+    },
+    "Unload Stop Timeout" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止卸载超时"
           }
         }
       }
@@ -4707,12 +6813,62 @@
         }
       }
     },
+    "Use Runtime Defaults" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用运行时默认值"
+          }
+        }
+      }
+    },
+    "Use a fixed value for repeatable output." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用固定值以获得可重复的输出。"
+          }
+        }
+      }
+    },
+    "Use a friendly name in LlamaDock and a stable identifier in API requests." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 LlamaDock 中使用易懂的名称，并为 API 请求设置稳定标识。"
+          }
+        }
+      }
+    },
+    "Use the runtime default unless testing requires a fixed value." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "除非测试需要固定值，否则使用运行时默认值。"
+          }
+        }
+      }
+    },
     "Valid" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "有效"
+          }
+        }
+      }
+    },
+    "Valid range: 1–65535." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有效范围：1–65535。"
           }
         }
       }
@@ -4733,6 +6889,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "验证"
+          }
+        }
+      }
+    },
+    "Value cache data type." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Value 缓存的数据类型。"
           }
         }
       }
@@ -4783,12 +6949,32 @@
         }
       }
     },
+    "Version history and downloads" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "版本历史与下载"
+          }
+        }
+      }
+    },
     "View All Logs" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "查看全部日志"
+          }
+        }
+      }
+    },
+    "View License" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看许可证"
           }
         }
       }
@@ -4913,12 +7099,42 @@
         }
       }
     },
+    "Wall Time" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实际耗时"
+          }
+        }
+      }
+    },
+    "Warming up model…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在预热模型…"
+          }
+        }
+      }
+    },
     "Warnings & Errors" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "警告与错误"
+          }
+        }
+      }
+    },
+    "Where llama-server accepts connections." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "llama-server 接受连接的地址。"
           }
         }
       }
@@ -4953,6 +7169,16 @@
         }
       }
     },
+    "llama.cpp" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "llama.cpp"
+          }
+        }
+      }
+    },
     "llama.cpp Runtime" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4962,6 +7188,399 @@
           }
         }
       }
+    },
+    "Global Model Defaults" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全局模型默认设置"
+          }
+        }
+      }
+    },
+    "Shared by every model unless its model settings provide an override." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有模型共享；单个模型设置中的覆盖项优先。"
+          }
+        }
+      }
+    },
+    "Maximum shared KV context per loaded model. Range: 1K–1M tokens." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每个已加载模型的最大共享 KV 上下文。范围：1K–1M token。"
+          }
+        }
+      }
+    },
+    "1K" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1K"
+          }
+        }
+      }
+    },
+    "1M" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1M"
+          }
+        }
+      }
+    },
+    "K Cache Type" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "K 缓存类型"
+          }
+        }
+      }
+    },
+    "Key-cache precision. Lower-bit types save memory at some quality cost." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "键缓存精度。更低位宽可节省内存，但可能影响质量。"
+          }
+        }
+      }
+    },
+    "V Cache Type" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "V 缓存类型"
+          }
+        }
+      }
+    },
+    "Value-cache precision. q8_0 is the memory-safe default." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "值缓存精度。q8_0 是更节省内存的默认值。"
+          }
+        }
+      }
+    },
+    "Let llama.cpp choose, offload all layers, or keep model layers on CPU." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "让 llama.cpp 自动选择、卸载全部层，或将模型层保留在 CPU。"
+          }
+        }
+      }
+    },
+    "KV Cache Offload" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KV 缓存卸载"
+          }
+        }
+      }
+    },
+    "Keep KV cache compute on the GPU when supported." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在支持时将 KV 缓存计算保留在 GPU。"
+          }
+        }
+      }
+    },
+    "Enable KV cache offload" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用 KV 缓存卸载"
+          }
+        }
+      }
+    },
+    "Fit to Available Memory" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "适配可用内存"
+          }
+        }
+      }
+    },
+    "Allow llama.cpp to tune automatic options to preserve a free-memory margin." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许 llama.cpp 调整自动参数，以保留空闲内存余量。"
+          }
+        }
+      }
+    },
+    "Enable memory fitting" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用内存适配"
+          }
+        }
+      }
+    },
+    "Free-memory Target" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "空闲内存目标"
+          }
+        }
+      }
+    },
+    "Memory margin llama.cpp tries to leave available on each device." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "llama.cpp 尝试在每个设备上保留的内存余量。"
+          }
+        }
+      }
+    },
+    "Minimum Fit Context" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内存适配最小上下文"
+          }
+        }
+      }
+    },
+    "Lowest context llama.cpp may choose while fitting memory." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "llama.cpp 适配内存时可选择的最低上下文。"
+          }
+        }
+      }
+    },
+    "Global Performance Defaults" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全局性能默认设置"
+          }
+        }
+      }
+    },
+    "Common llama.cpp scheduling and prompt-processing settings." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通用的 llama.cpp 调度与提示词处理设置。"
+          }
+        }
+      }
+    },
+    "Automatic is recommended; force a mode only for compatibility testing." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "建议使用自动模式；仅在兼容性测试时强制指定。"
+          }
+        }
+      }
+    },
+    "CPU Threads" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CPU 线程"
+          }
+        }
+      }
+    },
+    "Generation worker threads. Automatic uses the runtime default." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成工作线程数。自动模式使用运行时默认值。"
+          }
+        }
+      }
+    },
+    "Automatic" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动"
+          }
+        }
+      }
+    },
+    "Concurrent inference slots sharing the configured context cache." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享已配置上下文缓存的并发推理槽位数。"
+          }
+        }
+      }
+    },
+    "Logical maximum tokens processed in one prompt batch." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "单个提示词批次处理的逻辑最大 token 数。"
+          }
+        }
+      }
+    },
+    "Physical compute batch; it cannot exceed the logical batch size." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理计算批次，不能超过逻辑批处理大小。"
+          }
+        }
+      }
+    },
+    "All layers" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部层"
+          }
+        }
+      }
+    },
+    "CPU only" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅 CPU"
+          }
+        }
+      }
+    },
+    "Global default" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全局默认值"
+          }
+        }
+      }
+    },
+    "Leave fields empty to inherit the global model defaults." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "留空即可继承全局模型默认设置。"
+          }
+        }
+      }
+    },
+    "Use Global Defaults" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用全局默认值"
+          }
+        }
+      }
+    },
+    "Optional per-model overrides for the global performance defaults." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用于覆盖全局性能默认值的可选单模型设置。"
+          }
+        }
+      }
+    },
+    "Inherit the global mode unless this model needs a compatibility override." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "除非此模型需要兼容性覆盖，否则继承全局模式。"
+          }
+        }
+      }
+    },
+    "Optional key-cache precision override." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选的键缓存精度覆盖。"
+          }
+        }
+      }
+    },
+    "Optional value-cache precision override." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选的值缓存精度覆盖。"
+          }
+        }
+      }
+    },
+    "localhost" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "localhost"
+          }
+        }
+      }
+    },
+    "model-id" : {
+
     },
     "offline cache" : {
       "localizations" : {
@@ -4973,12 +7592,32 @@
         }
       }
     },
+    "seconds" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "秒"
+          }
+        }
+      }
+    },
     "stdout and stderr from the owned llama-server process will appear here." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "受管 llama-server 进程的标准输出和标准错误会显示在这里。"
+          }
+        }
+      }
+    },
+    "tokens" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "token"
           }
         }
       }
