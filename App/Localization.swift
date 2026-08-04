@@ -33,11 +33,6 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     }
 }
 
-enum AppAppearance {
-    static let showMenuBarIconKey = "showMenuBarIcon"
-    static let showDockIconKey = "showDockIcon"
-}
-
 func appLocalizedString(
     _ value: String.LocalizationValue,
     locale: Locale

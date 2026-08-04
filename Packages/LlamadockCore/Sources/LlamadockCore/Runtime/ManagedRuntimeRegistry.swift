@@ -27,6 +27,7 @@ public struct ManagedRuntimeRecord:
     public let validatedAt: Date
     public let versionOutput: String
     public let archiveSHA256: String
+    public let capabilities: RuntimeCapabilities?
 
     public init(
         id: String,
@@ -39,7 +40,8 @@ public struct ManagedRuntimeRecord:
         installedAt: Date,
         validatedAt: Date,
         versionOutput: String,
-        archiveSHA256: String
+        archiveSHA256: String,
+        capabilities: RuntimeCapabilities? = nil
     ) {
         self.id = id
         self.tag = tag
@@ -52,6 +54,7 @@ public struct ManagedRuntimeRecord:
         self.validatedAt = validatedAt
         self.versionOutput = versionOutput
         self.archiveSHA256 = archiveSHA256
+        self.capabilities = capabilities
     }
 }
 

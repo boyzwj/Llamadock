@@ -310,6 +310,166 @@ struct ServerProcessControllerTests {
         #expect(reader.resetCount >= 2)
     }
 
+    @Test("persists ownership while running and removes it on stop")
+    func persistsOwnershipUntilStop() async throws {
+        let processStartTime = Date(timeIntervalSince1970: 1_785_315_100)
+        let executableURL = URL(filePath: "/custom/bin/llama-server")
+        let handle = FakeManagedProcessHandle(processIdentifier: 4_250)
+        let store = FakeServerOwnershipStore()
+        let inspector = FakeServerProcessInspector(
+            identities: [
+                4_250: ServerProcessIdentity(
+                    processIdentifier: 4_250,
+                    parentProcessIdentifier: 100,
+                    processStartTime: processStartTime,
+                    executableURL: executableURL
+                )
+            ]
+        )
+        let controller = ServerProcessController(
+            launcher: FakeServerProcessLauncher(handles: [handle]),
+            healthChecker: StaticHealthChecker(result: .ready),
+            endpointChecker: StaticEndpointChecker(result: .available),
+            ownershipStore: store,
+            processInspector: inspector
+        )
+        let profileID = UUID()
+
+        try await controller.start(
+            profileID: profileID,
+            runtimeID: "custom:test",
+            invocation: try makeInvocation(),
+            host: "127.0.0.1",
+            port: 8_080,
+            readinessTimeout: .seconds(1)
+        )
+
+        let record = await store.record
+        #expect(record?.processIdentifier == 4_250)
+        #expect(record?.processStartTime == processStartTime)
+        #expect(record?.executableURL == executableURL)
+        #expect(record?.runtimeID == "custom:test")
+        #expect(record?.profileID == profileID)
+
+        await controller.stop()
+        #expect(await store.record == nil)
+    }
+
+    @Test("terminates a matching orphan and clears its record")
+    func recoversMatchingOrphan() async {
+        let record = makeOwnershipRecord(processIdentifier: 4_251)
+        let store = FakeServerOwnershipStore(record: record)
+        let inspector = FakeServerProcessInspector(
+            identities: [
+                4_251: ServerProcessIdentity(
+                    processIdentifier: 4_251,
+                    parentProcessIdentifier: 1,
+                    processStartTime: record.processStartTime,
+                    executableURL: record.executableURL
+                )
+            ]
+        )
+        let controller = ServerProcessController(
+            ownershipStore: store,
+            processInspector: inspector
+        )
+
+        let result = await controller.recoverOrphanedServer(
+            gracePeriod: .milliseconds(10)
+        )
+
+        #expect(result == .orphanTerminated(processIdentifier: 4_251))
+        #expect(inspector.terminatedProcessIdentifiers == [4_251])
+        #expect(await store.record == nil)
+    }
+
+    @Test("never signals a reused PID that does not match the record")
+    func ignoresReusedProcessIdentifier() async {
+        let record = makeOwnershipRecord(processIdentifier: 4_252)
+        let store = FakeServerOwnershipStore(record: record)
+        let inspector = FakeServerProcessInspector(
+            identities: [
+                4_252: ServerProcessIdentity(
+                    processIdentifier: 4_252,
+                    parentProcessIdentifier: 1,
+                    processStartTime: record.processStartTime
+                        .addingTimeInterval(60),
+                    executableURL: record.executableURL
+                )
+            ]
+        )
+        let controller = ServerProcessController(
+            ownershipStore: store,
+            processInspector: inspector
+        )
+
+        let result = await controller.recoverOrphanedServer()
+
+        #expect(result == .staleRecordRemoved)
+        #expect(inspector.terminatedProcessIdentifiers.isEmpty)
+        #expect(await store.record == nil)
+    }
+
+    @Test("force terminates an orphan that ignores graceful termination")
+    func forceTerminatesUnresponsiveOrphan() async {
+        let record = makeOwnershipRecord(processIdentifier: 4_253)
+        let store = FakeServerOwnershipStore(record: record)
+        let inspector = FakeServerProcessInspector(
+            identities: [
+                4_253: ServerProcessIdentity(
+                    processIdentifier: 4_253,
+                    parentProcessIdentifier: 1,
+                    processStartTime: record.processStartTime,
+                    executableURL: record.executableURL
+                )
+            ],
+            ignoresTerminate: true
+        )
+        let controller = ServerProcessController(
+            ownershipStore: store,
+            processInspector: inspector
+        )
+
+        let result = await controller.recoverOrphanedServer(
+            gracePeriod: .milliseconds(1)
+        )
+
+        #expect(result == .orphanTerminated(processIdentifier: 4_253))
+        #expect(inspector.terminatedProcessIdentifiers == [4_253])
+        #expect(inspector.forceTerminatedProcessIdentifiers == [4_253])
+        #expect(await store.record == nil)
+    }
+
+    @Test("does not terminate a server that still has a live owner")
+    func preservesServerWithLiveOwner() async {
+        let record = makeOwnershipRecord(processIdentifier: 4_254)
+        let store = FakeServerOwnershipStore(record: record)
+        let inspector = FakeServerProcessInspector(
+            identities: [
+                4_254: ServerProcessIdentity(
+                    processIdentifier: 4_254,
+                    parentProcessIdentifier: 999,
+                    processStartTime: record.processStartTime,
+                    executableURL: record.executableURL
+                )
+            ]
+        )
+        let controller = ServerProcessController(
+            ownershipStore: store,
+            processInspector: inspector
+        )
+
+        let result = await controller.recoverOrphanedServer()
+
+        guard case .failed(let reason) = result else {
+            Issue.record("Expected a live-owner recovery failure")
+            return
+        }
+        #expect(reason.contains("still owned by process 999"))
+        #expect(inspector.terminatedProcessIdentifiers.isEmpty)
+        #expect(await store.record == record)
+    }
+
     private func makeInvocation() throws -> ProcessInvocation {
         try ProcessInvocation(
             executableURL: URL(filePath: "/custom/bin/llama-server"),
@@ -318,6 +478,21 @@ struct ServerProcessControllerTests {
                 "--host", "127.0.0.1",
                 "--port", "8080",
             ]
+        )
+    }
+
+    private func makeOwnershipRecord(
+        processIdentifier: Int32
+    ) -> ServerOwnershipRecord {
+        ServerOwnershipRecord(
+            ownerProcessIdentifier: 100,
+            processIdentifier: processIdentifier,
+            processStartTime: Date(timeIntervalSince1970: 1_785_315_100),
+            executableURL: URL(filePath: "/custom/bin/llama-server"),
+            runtimeID: "custom:test",
+            profileID: UUID(),
+            host: "127.0.0.1",
+            port: 8_080
         )
     }
 }
@@ -452,5 +627,76 @@ private final class StaticProcessMetricsReader:
         lock.lock()
         defer { lock.unlock() }
         return resets
+    }
+}
+
+private actor FakeServerOwnershipStore: ServerOwnershipStoring {
+    private(set) var record: ServerOwnershipRecord?
+
+    init(record: ServerOwnershipRecord? = nil) {
+        self.record = record
+    }
+
+    func load() -> ServerOwnershipRecord? {
+        record
+    }
+
+    func save(_ record: ServerOwnershipRecord) {
+        self.record = record
+    }
+
+    func remove() {
+        record = nil
+    }
+}
+
+private final class FakeServerProcessInspector:
+    ServerProcessInspecting,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var identities: [Int32: ServerProcessIdentity]
+    private var terminatedIDs: [Int32] = []
+    private var forceTerminatedIDs: [Int32] = []
+    private let ignoresTerminate: Bool
+
+    init(
+        identities: [Int32: ServerProcessIdentity],
+        ignoresTerminate: Bool = false
+    ) {
+        self.identities = identities
+        self.ignoresTerminate = ignoresTerminate
+    }
+
+    func identity(
+        processIdentifier: Int32
+    ) -> ServerProcessIdentity? {
+        lock.withLock {
+            identities[processIdentifier]
+        }
+    }
+
+    func terminate(processIdentifier: Int32) {
+        lock.withLock {
+            terminatedIDs.append(processIdentifier)
+            if !ignoresTerminate {
+                identities[processIdentifier] = nil
+            }
+        }
+    }
+
+    func forceTerminate(processIdentifier: Int32) {
+        lock.withLock {
+            forceTerminatedIDs.append(processIdentifier)
+            identities[processIdentifier] = nil
+        }
+    }
+
+    var terminatedProcessIdentifiers: [Int32] {
+        lock.withLock { terminatedIDs }
+    }
+
+    var forceTerminatedProcessIdentifiers: [Int32] {
+        lock.withLock { forceTerminatedIDs }
     }
 }

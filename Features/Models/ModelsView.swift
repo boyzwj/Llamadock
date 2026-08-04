@@ -9,51 +9,32 @@ struct ModelsView: View {
     @State private var searchText = ""
     @State private var validationFilter = ModelValidationFilter.all
     @State private var source = ModelSource.local
+    @State private var modelSettingsSearchText = ""
     @State private var profileEditorLevel =
         ProfileEditorLevel.basic
     @State private var pendingModelTrash: LocalModelFile?
+    @State private var pendingProfileDeletion: LaunchProfile?
+    let mode: ModelPageMode
+
+    init(mode: ModelPageMode = .browser) {
+        self.mode = mode
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Models")
-                        .font(.largeTitle.bold())
-                    Text("Local GGUF library and Hugging Face")
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Picker("Model Source", selection: $source) {
-                    ForEach(ModelSource.allCases) { source in
-                        Label(
-                            source.localizedTitle(locale: locale),
-                            systemImage: source.icon
-                        )
-                            .tag(source)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 360)
-            }
-            .padding(.horizontal, LlamaDockLayout.pagePadding)
-            .padding(.vertical, 14)
-
-            Divider()
-
-            switch source {
-            case .local:
-                localLibrary
-            case .huggingFace:
-                HuggingFaceModelsView()
+        Group {
+            switch mode {
+            case .browser:
+                browserBody
+            case .settings:
+                modelSettingsBody
             }
         }
-        .navigationTitle("Models")
+        .navigationTitle(
+            mode == .browser ? "Models" : "Model Settings"
+        )
         .toolbar {
             ToolbarItemGroup {
-                if source == .local {
+                if mode == .browser, source == .local {
                     Button("Add Folder", systemImage: "folder.badge.plus") {
                         chooseDirectories()
                     }
@@ -85,13 +66,6 @@ struct ModelsView: View {
                             appModel.localModelTrashBlockReason(
                                 model
                             ) != nil
-                        )
-                        .help(
-                            appModel.localModelTrashBlockReason(
-                                model
-                            ) ?? localized(
-                                "Move this GGUF file to the system Trash."
-                            )
                         )
                     }
                 }
@@ -126,6 +100,267 @@ struct ModelsView: View {
         } message: { model in
             Text(trashConfirmationMessage(for: model))
         }
+        .confirmationDialog(
+            "Delete Model Configuration?",
+            isPresented: Binding(
+                get: { pendingProfileDeletion != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingProfileDeletion = nil
+                    }
+                }
+            ),
+            presenting: pendingProfileDeletion
+        ) { profile in
+            Button(
+                "Delete \(profile.name)",
+                role: .destructive
+            ) {
+                pendingProfileDeletion = nil
+                appModel.selectProfile(profile.id)
+                Task {
+                    await appModel.deleteSelectedProfile()
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingProfileDeletion = nil
+            }
+        } message: { profile in
+            Text(
+                "This removes only the saved configuration for \(profile.name). The GGUF model file is not deleted."
+            )
+        }
+    }
+
+    private var browserBody: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Models")
+                        .font(.largeTitle.bold())
+                    Text(
+                        "Local GGUF library, Hugging Face, and ModelScope"
+                    )
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Picker("Model Source", selection: $source) {
+                    ForEach(ModelSource.allCases) { source in
+                        Label(
+                            source.localizedTitle(locale: locale),
+                            systemImage: source.icon
+                        )
+                            .tag(source)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 420)
+            }
+            .padding(.horizontal, LlamaDockLayout.pagePadding)
+            .padding(.vertical, 14)
+
+            Divider()
+
+            switch source {
+            case .local:
+                localLibrary
+            case .huggingFace:
+                ModelHubModelsView(source: .huggingFace)
+                    .id(ModelHubSource.huggingFace)
+            case .modelScope:
+                ModelHubModelsView(source: .modelScope)
+                    .id(ModelHubSource.modelScope)
+            }
+        }
+    }
+
+    private var modelSettingsBody: some View {
+        HSplitView {
+            VStack(spacing: 0) {
+                HStack(alignment: .center, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Configured Models")
+                            .font(.title2.bold())
+                        Text(
+                            "\(appModel.enabledRouterProfiles.count) enabled • \(appModel.loadedServerModelCount) loaded"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    addModelConfigurationMenu
+                }
+                .padding(14)
+
+                Divider()
+
+                if appModel.profiles.isEmpty {
+                    EmptyStateAction(
+                        title: "No Configured Models",
+                        description:
+                            "Choose a local GGUF model to make it available through llama-server.",
+                        systemImage: "cube.transparent",
+                        actionTitle: "Browse Models"
+                    ) {
+                        appModel.selectedSection = .models
+                    }
+                } else {
+                    HStack(spacing: 7) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        TextField(
+                            "Search configured models",
+                            text: $modelSettingsSearchText
+                        )
+                        .textFieldStyle(.plain)
+
+                        if !modelSettingsSearchText.isEmpty {
+                            Button("Clear Search", systemImage: "xmark.circle.fill") {
+                                modelSettingsSearchText = ""
+                            }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
+
+                    List(
+                        filteredSettingsProfiles,
+                        selection: Binding(
+                            get: { appModel.selectedProfileID },
+                            set: { appModel.selectProfile($0) }
+                        )
+                    ) { profile in
+                        ModelSettingRow(
+                            profile: profile,
+                            runtimeModel: appModel.serverModel(
+                                for: profile
+                            )
+                        )
+                        .tag(profile.id)
+                    }
+                    .listStyle(.sidebar)
+                }
+
+                Divider()
+
+                HStack {
+                    Button("Duplicate", systemImage: "plus.square.on.square") {
+                        appModel.duplicateSelectedProfile()
+                    }
+                    .labelStyle(.iconOnly)
+                    .disabled(appModel.profile == nil)
+                    .help("Duplicate Configuration")
+
+                    Button(
+                        "Delete",
+                        systemImage: "trash",
+                        role: .destructive
+                    ) {
+                        pendingProfileDeletion = appModel.profile
+                    }
+                    .labelStyle(.iconOnly)
+                    .disabled(appModel.profile == nil)
+                    .help("Delete Configuration")
+
+                    Spacer()
+
+                    Menu {
+                        Button(
+                            "Import…",
+                            systemImage: "square.and.arrow.down"
+                        ) {
+                            importProfile()
+                        }
+                        Button(
+                            "Export…",
+                            systemImage: "square.and.arrow.up"
+                        ) {
+                            exportProfile()
+                        }
+                        .disabled(appModel.profile == nil)
+                    } label: {
+                        Label("More Actions", systemImage: "ellipsis.circle")
+                    }
+                    .labelStyle(.iconOnly)
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
+                .padding(12)
+            }
+            .frame(
+                minWidth: 220,
+                idealWidth: 250,
+                maxWidth: 290
+            )
+
+            if appModel.profile == nil {
+                ContentUnavailableView(
+                    "Choose a Configured Model",
+                    systemImage: "cube.transparent",
+                    description: Text(
+                        "Select a model on the left to review its availability, API name, and performance settings."
+                    )
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        modelConfigurationHeader
+                        if appModel.serverSnapshot.run != nil {
+                            InlineNotice(
+                                "Changes are saved automatically. Restart the server to apply them."
+                            )
+                        }
+                        profileEditor
+                    }
+                    .padding(18)
+                    .frame(maxWidth: 880, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                }
+                .frame(minWidth: 380, maxWidth: .infinity)
+            }
+        }
+    }
+
+    private var addModelConfigurationMenu: some View {
+        Menu {
+            let candidates = appModel.localModels.filter {
+                $0.validation == .valid && $0.role == .main
+            }
+            if candidates.isEmpty {
+                Text("No validated local models")
+            } else {
+                ForEach(candidates) { model in
+                    Button(model.displayName) {
+                        appModel.createProfile(for: model)
+                    }
+                }
+            }
+
+            Divider()
+
+            Button("Browse Model Library…", systemImage: "externaldrive") {
+                appModel.selectedSection = .models
+            }
+        } label: {
+            Label("Add Configured Model", systemImage: "plus")
+        }
+        .labelStyle(.iconOnly)
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Add Configured Model")
     }
 
     private var localLibrary: some View {
@@ -286,8 +521,12 @@ struct ModelsView: View {
                             model.validation == .valid,
                             model.role == .main
                         {
-                            Button("Create Default Profile") {
-                                appModel.createProfile(for: model)
+                            Button("Open Model Settings") {
+                                if appModel.profiles(for: model).isEmpty {
+                                    appModel.createProfile(for: model)
+                                }
+                                appModel.selectedSettingsTab = .models
+                                appModel.selectedSection = .settings
                             }
                         }
                         Button("Reveal in Finder") {
@@ -351,21 +590,7 @@ struct ModelsView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     modelHeader(model)
                     metadataCard(model)
-
-                    if
-                        model.validation == .valid,
-                        model.role == .main
-                    {
-                        profilesCard(model)
-
-                        if appModel.profiles(for: model).contains(
-                            where: {
-                                $0.id == appModel.selectedProfileID
-                            }
-                        ) {
-                            profileEditor
-                        }
-                    }
+                    modelRuntimeCard(model)
                 }
                 .padding(22)
             }
@@ -374,7 +599,7 @@ struct ModelsView: View {
                 "Choose a Model",
                 systemImage: "sidebar.right",
                 description: Text(
-                    "Select a GGUF file to inspect metadata and create a profile."
+                    "Select a GGUF file to inspect its metadata and current router state."
                 )
             )
         }
@@ -405,8 +630,16 @@ struct ModelsView: View {
                     model.validation == .valid,
                     model.role == .main
                 {
-                    Button("Create Default Profile") {
-                        appModel.createProfile(for: model)
+                    Button("Open Model Settings") {
+                        if appModel.profiles(for: model).isEmpty {
+                            appModel.createProfile(for: model)
+                        } else if let first = appModel.profiles(
+                            for: model
+                        ).first {
+                            appModel.selectProfile(first.id)
+                        }
+                        appModel.selectedSettingsTab = .models
+                        appModel.selectedSection = .settings
                     }
                     .buttonStyle(.borderedProminent)
                 }
@@ -441,6 +674,56 @@ struct ModelsView: View {
                     .foregroundStyle(.orange)
                     .textSelection(.enabled)
             }
+        }
+    }
+
+    private func modelRuntimeCard(
+        _ model: LocalModelFile
+    ) -> some View {
+        let settings = appModel.profiles(for: model)
+        let runtimeModels = settings.compactMap {
+            appModel.serverModel(for: $0)
+        }
+
+        return GroupBox("Router State") {
+            VStack(alignment: .leading, spacing: 10) {
+                if settings.isEmpty {
+                    Label(
+                        "This model is not included in the generated llama-server config.",
+                        systemImage: "minus.circle"
+                    )
+                    .foregroundStyle(.secondary)
+                } else {
+                    ForEach(settings) { setting in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(setting.router.identifier)
+                                    .font(.headline)
+                                Text(setting.name)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            ServerModelStateBadge(
+                                state: appModel.serverModel(
+                                    for: setting
+                                )?.state,
+                                isEnabled: setting.router.isEnabled
+                            )
+                        }
+                    }
+                }
+
+                if !runtimeModels.isEmpty {
+                    Text(
+                        "Status is reported by the running llama-server /models endpoint."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
         }
     }
 
@@ -619,13 +902,91 @@ struct ModelsView: View {
         }
     }
 
-    private var profileEditor: some View {
-        GroupBox("Launch Profile") {
-            VStack(alignment: .leading, spacing: 12) {
-                capabilitySummary
+    @ViewBuilder
+    private var modelConfigurationHeader: some View {
+        if let profile = appModel.profile {
+            SectionCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "cube.transparent.fill")
+                            .font(.title2)
+                            .foregroundStyle(
+                                profile.router.isEnabled
+                                    ? Color.accentColor
+                                    : Color.secondary
+                            )
+                            .frame(width: 42, height: 42)
+                            .background(
+                                Color.accentColor.opacity(0.10),
+                                in: RoundedRectangle(cornerRadius: 10)
+                            )
+                            .accessibilityHidden(true)
 
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(profile.name)
+                                .font(.title2.bold())
+                                .lineLimit(2)
+                            Text(
+                                URL(filePath: profile.model.mainPath)
+                                    .lastPathComponent
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(profile.model.mainPath)
+                        }
+
+                        Spacer(minLength: 8)
+
+                        ServerModelStateBadge(
+                            state: appModel.serverModel(for: profile)?.state,
+                            isEnabled: profile.router.isEnabled
+                        )
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Availability")
+                                .font(.headline)
+                            Text(
+                                "Choose whether this model is hidden, loaded when requested, or kept ready from startup."
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+
+                        Picker(
+                            "Model Availability",
+                            selection: modelAvailabilityBinding
+                        ) {
+                            ForEach(ModelAvailabilityChoice.allCases) {
+                                Label($0.title, systemImage: $0.systemImage)
+                                    .tag($0)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                    }
+
+                    Label(
+                        "Saved automatically",
+                        systemImage: "checkmark.circle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var profileEditor: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 7) {
                 Picker(
-                    "Profile Detail",
+                    "Configuration Detail",
                     selection: $profileEditorLevel
                 ) {
                     ForEach(ProfileEditorLevel.allCases) { level in
@@ -633,208 +994,450 @@ struct ModelsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .accessibilityLabel("Profile detail level")
+                .accessibilityLabel("Configuration detail level")
 
-                Form {
-                    Section("Identity and Models") {
-                        TextField("Profile Name", text: profileNameBinding)
+                Text(profileEditorLevel.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
-                        capabilityField("Model Path", flag: "--model") {
-                            Text(appModel.profile?.model.mainPath ?? "")
-                                .font(.system(.body, design: .monospaced))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .textSelection(.enabled)
-                        }
+            capabilitySummary
+            identitySettingsCard
+            commonPerformanceCard
 
-                        capabilityField("Alias", flag: "--alias") {
-                            TextField(
-                                "Runtime default",
-                                text: aliasBinding
-                            )
-                        }
+            if profileEditorLevel.includes(.performance) {
+                performanceTuningCard
+            }
 
-                        capabilityField("Vision Projector", flag: "--mmproj") {
-                            companionPathControls(
-                                path: appModel.profile?.model.mmprojPath,
-                                title: localized(
-                                    "Choose a Vision Projector"
-                                ),
-                                set: {
-                                    $0.model.mmprojPath = $1
-                                }
-                            )
-                        }
+            if profileEditorLevel.includes(.advanced) {
+                companionModelsCard
+                samplingSettingsCard
+                systemPromptCard
+                extraArgumentsCard
+                generatedConfigurationCard
+            }
+        }
+    }
 
-                        capabilityField("Draft Model", flag: "--model-draft") {
-                            companionPathControls(
-                                path: appModel.profile?.model.draftPath,
-                                title: localized("Choose a Draft Model"),
-                                set: {
-                                    $0.model.draftPath = $1
-                                }
-                            )
-                        }
-                    }
+    private var identitySettingsCard: some View {
+        SectionCard {
+            VStack(alignment: .leading, spacing: 14) {
+                settingsSectionHeader(
+                    "Names and File",
+                    subtitle:
+                        "Use a friendly name in LlamaDock and a stable identifier in API requests."
+                )
 
-                    Section("Network") {
-                        capabilityField("Host", flag: "--host") {
-                            TextField("Host", text: hostBinding)
-                        }
-                        capabilityField("Port", flag: "--port") {
-                            TextField(
-                                "Port",
-                                value: portBinding,
-                                format: .number
-                            )
-                        }
-                    }
+                configurationField(
+                    "Display Name",
+                    detail:
+                        "Shown only in LlamaDock. Rename it to distinguish configurations for the same model."
+                ) {
+                    TextField("Display Name", text: profileNameBinding)
+                        .textFieldStyle(.roundedBorder)
+                }
 
-                    if profileEditorLevel.includes(.performance) {
-                        Section("Performance") {
-                        optionalIntegerField(
-                            "Context Size",
-                            flag: "--ctx-size",
-                            binding: contextSizeBinding
-                        )
-                        optionalIntegerField(
-                            "GPU Layers",
-                            flag: "--n-gpu-layers",
-                            binding: gpuLayersBinding
-                        )
-                        optionalIntegerField(
-                            "Threads",
-                            flag: "--threads",
-                            binding: threadsBinding
-                        )
-                        optionalIntegerField(
-                            "Parallel Slots",
-                            flag: "--parallel",
-                            binding: parallelBinding
-                        )
-                        optionalIntegerField(
-                            "Batch Size",
-                            flag: "--batch-size",
-                            binding: batchSizeBinding
-                        )
-                        optionalIntegerField(
-                            "Micro Batch Size",
-                            flag: "--ubatch-size",
-                            binding: ubatchSizeBinding
-                        )
+                Divider()
 
-                        capabilityField(
-                            "Flash Attention",
-                            flag: "--flash-attn"
-                        ) {
-                            Picker(
-                                "Flash Attention",
-                                selection: flashAttentionBinding
-                            ) {
-                                ForEach(OptionalBooleanChoice.allCases) {
-                                    Text(
-                                        $0.localizedTitle(locale: locale)
-                                    )
-                                    .tag($0)
-                                }
+                configurationField(
+                    "API Model Identifier",
+                    detail:
+                        "Clients send this value as the model name. Keep it short, unique, and stable."
+                ) {
+                    TextField("model-id", text: routerIdentifierBinding)
+                        .font(.system(.body, design: .monospaced))
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                Divider()
+
+                configurationField(
+                    "Model File",
+                    detail:
+                        "The GGUF file used by this configuration.",
+                    flag: "--model"
+                ) {
+                    HStack(spacing: 8) {
+                        Text(appModel.profile?.model.mainPath ?? "")
+                            .font(.system(.caption, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+
+                        Spacer(minLength: 4)
+
+                        Button("Reveal in Finder", systemImage: "folder") {
+                            if let path = appModel.profile?.model.mainPath {
+                                reveal(URL(filePath: path))
                             }
-                            .labelsHidden()
                         }
+                        .labelStyle(.iconOnly)
+                        .help("Reveal in Finder")
 
-                        capabilityField("KV Cache K", flag: "--cache-type-k") {
-                            TextField(
-                                "Runtime default",
-                                text: cacheTypeKBinding
-                            )
+                        Button("Copy Path", systemImage: "doc.on.doc") {
+                            copy(appModel.profile?.model.mainPath ?? "")
                         }
-                        capabilityField("KV Cache V", flag: "--cache-type-v") {
-                            TextField(
-                                "Runtime default",
-                                text: cacheTypeVBinding
-                            )
-                        }
-                        }
-                    }
-
-                    if profileEditorLevel.includes(.advanced) {
-                        Section("Sampling") {
-                        optionalDecimalField(
-                            "Temperature",
-                            flag: "--temp",
-                            binding: temperatureBinding
-                        )
-                        optionalIntegerField(
-                            "Top K",
-                            flag: "--top-k",
-                            binding: topKBinding
-                        )
-                        optionalDecimalField(
-                            "Top P",
-                            flag: "--top-p",
-                            binding: topPBinding
-                        )
-                        optionalDecimalField(
-                            "Min P",
-                            flag: "--min-p",
-                            binding: minPBinding
-                        )
-                        optionalDecimalField(
-                            "Repeat Penalty",
-                            flag: "--repeat-penalty",
-                            binding: repeatPenaltyBinding
-                        )
-                        optionalIntegerField(
-                            "Seed",
-                            flag: "--seed",
-                            binding: seedBinding
-                        )
-                        }
-
-                        Section("System Prompt") {
-                        capabilityField(
-                            "Prompt",
-                            flag: "--system-prompt"
-                        ) {
-                            TextEditor(text: systemPromptBinding)
-                                .frame(minHeight: 70)
-                        }
-                        }
-
-                        Section("Extra Arguments") {
-                        TextEditor(text: extraArgumentsBinding)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(minHeight: 80)
-                        Text(
-                            "Enter one argument token per line. Tokens are passed directly to llama-server and are never interpreted by a shell."
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    Section("Generated Command") {
-                        if let command = appModel.commandPreview {
-                            Text(command)
-                                .font(.system(.body, design: .monospaced))
-                                .textSelection(.enabled)
-                            Button("Copy Command", systemImage: "doc.on.doc") {
-                                copy(command)
-                            }
-                        } else {
-                            Label(
-                                appModel.commandError
-                                    ?? localized(
-                                        "Choose a validated runtime."
-                                    ),
-                                systemImage: "exclamationmark.triangle"
-                            )
-                            .foregroundStyle(.orange)
-                        }
+                        .labelStyle(.iconOnly)
+                        .help("Copy Path")
                     }
                 }
-                .formStyle(.grouped)
             }
-            .padding(.top, 4)
+        }
+    }
+
+    private var commonPerformanceCard: some View {
+        SectionCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    settingsSectionHeader(
+                        "Everyday Performance",
+                        subtitle:
+                            "Leave fields empty to inherit the global model defaults."
+                    )
+
+                    Spacer(minLength: 12)
+
+                    if hasCustomEverydayPerformanceSettings {
+                        Button("Use Global Defaults") {
+                            resetEverydayPerformanceSettings()
+                        }
+                        .controlSize(.small)
+                    }
+                }
+
+                configurationField(
+                    "Context Size",
+                    detail:
+                        "Maximum tokens the model can consider at once. Larger contexts use more memory.",
+                    flag: "--ctx-size"
+                ) {
+                    TextField(
+                        "Global default",
+                        text: contextSizeBinding
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 220)
+                }
+
+                Divider()
+
+                configurationField(
+                    "GPU Layers",
+                    detail:
+                        "Number of model layers offloaded to the GPU. Leave empty unless you need manual control.",
+                    flag: "--n-gpu-layers"
+                ) {
+                    TextField(
+                        "Global default",
+                        text: gpuLayersBinding
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 220)
+                }
+            }
+        }
+    }
+
+    private var performanceTuningCard: some View {
+        SectionCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    settingsSectionHeader(
+                        "Performance Tuning",
+                        subtitle:
+                            "Optional per-model overrides for the global performance defaults."
+                    )
+
+                    Spacer(minLength: 12)
+
+                    if hasCustomPerformanceTuningSettings {
+                        Button("Use Global Defaults") {
+                            resetPerformanceTuningSettings()
+                        }
+                        .controlSize(.small)
+                    }
+                }
+
+                LazyVGrid(
+                    columns: [
+                        GridItem(
+                            .adaptive(minimum: 230),
+                            alignment: .topLeading
+                        )
+                    ],
+                    alignment: .leading,
+                    spacing: 16
+                ) {
+                    compactValueField(
+                        "Threads",
+                        detail: "CPU worker threads.",
+                        flag: "--threads",
+                        binding: threadsBinding,
+                        placeholder: "Global default"
+                    )
+                    compactValueField(
+                        "Parallel Slots",
+                        detail: "Requests processed concurrently.",
+                        flag: "--parallel",
+                        binding: parallelBinding,
+                        placeholder: "Global default"
+                    )
+                    compactValueField(
+                        "Batch Size",
+                        detail: "Maximum logical prompt batch.",
+                        flag: "--batch-size",
+                        binding: batchSizeBinding,
+                        placeholder: "Global default"
+                    )
+                    compactValueField(
+                        "Micro Batch Size",
+                        detail: "Physical batch used per compute step.",
+                        flag: "--ubatch-size",
+                        binding: ubatchSizeBinding,
+                        placeholder: "Global default"
+                    )
+                    compactValueField(
+                        "Unload Stop Timeout",
+                        detail: "Seconds allowed for a clean model unload.",
+                        flag: nil,
+                        binding: stopTimeoutBinding,
+                        placeholder: "10"
+                    )
+
+                    configurationField(
+                        "Flash Attention",
+                        detail: "Inherit the global mode unless this model needs a compatibility override.",
+                        flag: "--flash-attn"
+                    ) {
+                        Picker(
+                            "Flash Attention",
+                            selection: flashAttentionBinding
+                        ) {
+                            ForEach(OptionalBooleanChoice.allCases) {
+                                Text($0.localizedTitle(locale: locale))
+                                    .tag($0)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 220)
+                    }
+
+                    configurationField(
+                        "KV Cache K",
+                        detail: "Optional key-cache precision override.",
+                        flag: "--cache-type-k"
+                    ) {
+                        modelKVCacheTypePicker(
+                            "KV Cache K",
+                            selection: cacheTypeKBinding
+                        )
+                    }
+                    configurationField(
+                        "KV Cache V",
+                        detail: "Optional value-cache precision override.",
+                        flag: "--cache-type-v"
+                    ) {
+                        modelKVCacheTypePicker(
+                            "KV Cache V",
+                            selection: cacheTypeVBinding
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private var companionModelsCard: some View {
+        SectionCard {
+            VStack(alignment: .leading, spacing: 14) {
+                settingsSectionHeader(
+                    "Companion Models",
+                    subtitle:
+                        "Attach optional GGUF files only when the main model requires them."
+                )
+
+                configurationField(
+                    "Vision Projector",
+                    detail: "Enables image input for a compatible multimodal model.",
+                    flag: "--mmproj"
+                ) {
+                    companionPathControls(
+                        path: appModel.profile?.model.mmprojPath,
+                        title: localized("Choose a Vision Projector"),
+                        set: { $0.model.mmprojPath = $1 }
+                    )
+                }
+
+                Divider()
+
+                configurationField(
+                    "Draft Model",
+                    detail: "Optional smaller model used for speculative decoding.",
+                    flag: "--model-draft"
+                ) {
+                    companionPathControls(
+                        path: appModel.profile?.model.draftPath,
+                        title: localized("Choose a Draft Model"),
+                        set: { $0.model.draftPath = $1 }
+                    )
+                }
+            }
+        }
+    }
+
+    private var samplingSettingsCard: some View {
+        SectionCard {
+            VStack(alignment: .leading, spacing: 14) {
+                settingsSectionHeader(
+                    "Sampling Defaults",
+                    subtitle:
+                        "Set server-side generation defaults only when API clients do not provide their own values."
+                )
+
+                LazyVGrid(
+                    columns: [
+                        GridItem(
+                            .adaptive(minimum: 230),
+                            alignment: .topLeading
+                        )
+                    ],
+                    alignment: .leading,
+                    spacing: 16
+                ) {
+                    compactValueField(
+                        "Temperature",
+                        detail: "Higher values increase variety.",
+                        flag: "--temp",
+                        binding: temperatureBinding
+                    )
+                    compactValueField(
+                        "Top K",
+                        detail: "Limit choices to the most likely tokens.",
+                        flag: "--top-k",
+                        binding: topKBinding
+                    )
+                    compactValueField(
+                        "Top P",
+                        detail: "Probability-mass sampling cutoff.",
+                        flag: "--top-p",
+                        binding: topPBinding
+                    )
+                    compactValueField(
+                        "Min P",
+                        detail: "Discard very unlikely tokens.",
+                        flag: "--min-p",
+                        binding: minPBinding
+                    )
+                    compactValueField(
+                        "Repeat Penalty",
+                        detail: "Discourage repeated output.",
+                        flag: "--repeat-penalty",
+                        binding: repeatPenaltyBinding
+                    )
+                    compactValueField(
+                        "Seed",
+                        detail: "Use a fixed value for repeatable output.",
+                        flag: "--seed",
+                        binding: seedBinding
+                    )
+                }
+            }
+        }
+    }
+
+    private var systemPromptCard: some View {
+        SectionCard {
+            VStack(alignment: .leading, spacing: 12) {
+                settingsSectionHeader(
+                    "System Prompt",
+                    subtitle:
+                        "Applied by llama-server when a client does not replace it."
+                )
+                configurationField(
+                    "Prompt",
+                    detail: "Leave empty to use the model and client defaults.",
+                    flag: "--system-prompt"
+                ) {
+                    TextEditor(text: systemPromptBinding)
+                        .frame(minHeight: 82)
+                        .padding(6)
+                        .background(
+                            .background,
+                            in: RoundedRectangle(cornerRadius: 6)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(.separator, lineWidth: 1)
+                        }
+                }
+            }
+        }
+    }
+
+    private var extraArgumentsCard: some View {
+        SectionCard {
+            VStack(alignment: .leading, spacing: 10) {
+                settingsSectionHeader(
+                    "Extra Arguments",
+                    subtitle:
+                        "For llama-server flags that are not available above."
+                )
+                TextEditor(text: extraArgumentsBinding)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 92)
+                    .padding(6)
+                    .background(
+                        .background,
+                        in: RoundedRectangle(cornerRadius: 6)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(.separator, lineWidth: 1)
+                    }
+                Text(
+                    "Enter one argument token per line. Tokens are passed directly to llama-server and are never interpreted by a shell."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var generatedConfigurationCard: some View {
+        SectionCard {
+            VStack(alignment: .leading, spacing: 12) {
+                settingsSectionHeader(
+                    "Generated llama-server Config",
+                    subtitle:
+                        "Technical preview of the configuration LlamaDock will use."
+                )
+
+                if let config = appModel.modelsPresetPreview {
+                    ScrollView(.horizontal) {
+                        Text(config)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(alignment: .topLeading)
+                            .padding(10)
+                    }
+                    .frame(maxHeight: 260)
+                    .background(
+                        .background,
+                        in: RoundedRectangle(cornerRadius: 6)
+                    )
+
+                    Button("Copy Config", systemImage: "doc.on.doc") {
+                        copy(config)
+                    }
+                } else {
+                    Label(
+                        appModel.commandError
+                            ?? localized("Choose a validated runtime."),
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .foregroundStyle(.orange)
+                }
+            }
         }
     }
 
@@ -858,9 +1461,10 @@ struct ModelsView: View {
                 .foregroundStyle(.secondary)
             } else {
                 Label(
-                    "Configured typed settings are supported by the selected runtime.",
+                    "Compatible with the selected runtime.",
                     systemImage: "checkmark.circle.fill"
                 )
+                .font(.caption)
                 .foregroundStyle(.green)
             }
         } else {
@@ -872,44 +1476,82 @@ struct ModelsView: View {
         }
     }
 
-    private func capabilityField<Content: View>(
+    private func settingsSectionHeader(
         _ title: LocalizedStringKey,
-        flag: String,
+        subtitle: LocalizedStringKey
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.title3.bold())
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func configurationField<Content: View>(
+        _ title: LocalizedStringKey,
+        detail: LocalizedStringKey,
+        flag: String? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        LabeledContent {
-            HStack {
-                content()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                CapabilitySupportBadge(
-                    support: appModel.selectedRuntime?.capabilities.support(
-                        for: flag
-                    ) ?? .unknown
-                )
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(title)
+                    .font(.headline)
+
+                Spacer(minLength: 8)
+
+                if let flag {
+                    CapabilitySupportBadge(
+                        support: appModel.selectedRuntime?.capabilities.support(
+                            for: flag
+                        ) ?? .unknown
+                    )
+                }
             }
-        } label: {
-            Text(title)
+
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private func optionalIntegerField(
+    private func compactValueField(
         _ title: LocalizedStringKey,
-        flag: String,
-        binding: Binding<String>
+        detail: LocalizedStringKey,
+        flag: String?,
+        binding: Binding<String>,
+        placeholder: LocalizedStringKey = "Runtime default"
     ) -> some View {
-        capabilityField(title, flag: flag) {
-            TextField("Runtime default", text: binding)
+        configurationField(title, detail: detail, flag: flag) {
+            TextField(placeholder, text: binding)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 220)
         }
     }
 
-    private func optionalDecimalField(
+    private func modelKVCacheTypePicker(
         _ title: LocalizedStringKey,
-        flag: String,
-        binding: Binding<String>
+        selection: Binding<String>
     ) -> some View {
-        capabilityField(title, flag: flag) {
-            TextField("Runtime default", text: binding)
+        Picker(title, selection: selection) {
+            Text("Global default").tag("")
+            ForEach(KVCacheType.allCases, id: \.rawValue) {
+                Text($0.rawValue).tag($0.rawValue)
+            }
+            if
+                !selection.wrappedValue.isEmpty,
+                KVCacheType(rawValue: selection.wrappedValue) == nil
+            {
+                Text(selection.wrappedValue).tag(selection.wrappedValue)
+            }
         }
+        .labelsHidden()
+        .frame(maxWidth: 220)
     }
 
     private func companionPathControls(
@@ -944,9 +1586,8 @@ struct ModelsView: View {
             return []
         }
 
-        var flags = ["--model", "--host", "--port"]
+        var flags = ["--model"]
         let optionalFlags: [(String, Bool)] = [
-            ("--alias", profile.server.alias != nil),
             ("--ctx-size", profile.server.contextSize != nil),
             ("--n-gpu-layers", profile.server.gpuLayers != nil),
             ("--threads", profile.server.threads != nil),
@@ -995,6 +1636,65 @@ struct ModelsView: View {
         }
     }
 
+    private var filteredSettingsProfiles: [LaunchProfile] {
+        let query = modelSettingsSearchText.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !query.isEmpty else {
+            return appModel.profiles
+        }
+        return appModel.profiles.filter { profile in
+            profile.name.localizedCaseInsensitiveContains(query)
+                || profile.router.identifier
+                    .localizedCaseInsensitiveContains(query)
+                || URL(filePath: profile.model.mainPath)
+                    .lastPathComponent
+                    .localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var hasCustomEverydayPerformanceSettings: Bool {
+        guard let profile = appModel.profile else {
+            return false
+        }
+        return profile.server.contextSize != nil
+            || profile.server.gpuLayers != nil
+    }
+
+    private var hasCustomPerformanceTuningSettings: Bool {
+        guard let profile = appModel.profile else {
+            return false
+        }
+        return profile.router.stopTimeout != nil
+            || profile.server.threads != nil
+            || profile.server.parallel != nil
+            || profile.server.batchSize != nil
+            || profile.server.ubatchSize != nil
+            || profile.server.flashAttention != nil
+            || profile.server.cacheTypeK != nil
+            || profile.server.cacheTypeV != nil
+    }
+
+    private func resetEverydayPerformanceSettings() {
+        appModel.updateProfile { profile in
+            profile.server.contextSize = nil
+            profile.server.gpuLayers = nil
+        }
+    }
+
+    private func resetPerformanceTuningSettings() {
+        appModel.updateProfile { profile in
+            profile.router.stopTimeout = nil
+            profile.server.threads = nil
+            profile.server.parallel = nil
+            profile.server.batchSize = nil
+            profile.server.ubatchSize = nil
+            profile.server.flashAttention = nil
+            profile.server.cacheTypeK = nil
+            profile.server.cacheTypeV = nil
+        }
+    }
+
     private var profileNameBinding: Binding<String> {
         Binding(
             get: { appModel.profile?.name ?? "" },
@@ -1004,36 +1704,56 @@ struct ModelsView: View {
         )
     }
 
-    private var hostBinding: Binding<String> {
-        Binding(
-            get: { appModel.profile?.server.host ?? "127.0.0.1" },
-            set: { value in
-                appModel.updateProfile { $0.server.host = value }
-            }
-        )
-    }
-
-    private var aliasBinding: Binding<String> {
-        optionalTextBinding(
-            get: { $0.server.alias },
-            set: { $0.server.alias = $1 }
-        )
-    }
-
-    private var portBinding: Binding<Int> {
+    private var modelAvailabilityBinding:
+        Binding<ModelAvailabilityChoice>
+    {
         Binding(
             get: {
-                Int(
-                    appModel.profile?.server.port
-                        ?? ServerOptions.defaultPort
-                )
+                guard let profile = appModel.profile else {
+                    return .off
+                }
+                guard profile.router.isEnabled else {
+                    return .off
+                }
+                return profile.router.loadOnStartup
+                    ? .atStartup
+                    : .onDemand
             },
-            set: { value in
-                let bounded = min(max(value, 1), Int(UInt16.max))
-                appModel.updateProfile {
-                    $0.server.port = UInt16(bounded)
+            set: { availability in
+                appModel.updateProfile { profile in
+                    switch availability {
+                    case .off:
+                        profile.router.isEnabled = false
+                        profile.router.loadOnStartup = false
+                    case .onDemand:
+                        profile.router.isEnabled = true
+                        profile.router.loadOnStartup = false
+                    case .atStartup:
+                        profile.router.isEnabled = true
+                        profile.router.loadOnStartup = true
+                    }
                 }
             }
+        )
+    }
+
+    private var routerIdentifierBinding: Binding<String> {
+        Binding(
+            get: { appModel.profile?.router.identifier ?? "" },
+            set: { value in
+                appModel.updateProfile {
+                    $0.router.identifier = value.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                }
+            }
+        )
+    }
+
+    private var stopTimeoutBinding: Binding<String> {
+        optionalIntegerBinding(
+            get: { $0.router.stopTimeout },
+            set: { $0.router.stopTimeout = $1 }
         )
     }
 
@@ -1542,6 +2262,7 @@ private enum ModelSource:
 {
     case local
     case huggingFace
+    case modelScope
 
     var id: String {
         rawValue
@@ -1553,6 +2274,8 @@ private enum ModelSource:
             appLocalizedString("Local Library", locale: locale)
         case .huggingFace:
             appLocalizedString("Hugging Face", locale: locale)
+        case .modelScope:
+            appLocalizedString("ModelScope", locale: locale)
         }
     }
 
@@ -1562,6 +2285,8 @@ private enum ModelSource:
             "internaldrive"
         case .huggingFace:
             "globe"
+        case .modelScope:
+            "network"
         }
     }
 }
@@ -1619,6 +2344,175 @@ private extension LocalModelRole {
     }
 }
 
+enum ModelPageMode {
+    case browser
+    case settings
+}
+
+private struct ModelSettingRow: View {
+    let profile: LaunchProfile
+    let runtimeModel: LlamaServerModel?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(
+                systemName: profile.router.isEnabled
+                    ? "cube.transparent.fill"
+                    : "cube.transparent"
+            )
+            .foregroundStyle(
+                profile.router.isEnabled
+                    ? Color.accentColor
+                    : Color.secondary
+            )
+            .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(profile.name)
+                    .lineLimit(1)
+                Text(profile.router.identifier)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text(
+                    URL(filePath: profile.model.mainPath)
+                        .lastPathComponent
+                )
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+            }
+
+            Spacer(minLength: 4)
+
+            ServerModelStateBadge(
+                state: runtimeModel?.state,
+                isEnabled: profile.router.isEnabled,
+                compact: true
+            )
+        }
+        .padding(.vertical, 3)
+    }
+}
+
+private struct ServerModelStateBadge: View {
+    let state: LlamaServerModelState?
+    let isEnabled: Bool
+    var compact = false
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        if compact {
+            label
+                .labelStyle(.iconOnly)
+        } else {
+            label
+                .labelStyle(.titleAndIcon)
+        }
+    }
+
+    private var label: some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption)
+            .foregroundStyle(color)
+            .help(title)
+    }
+
+    private var title: String {
+        guard isEnabled else {
+            return appLocalizedString("Disabled", locale: locale)
+        }
+        switch state {
+        case .loaded:
+            return appLocalizedString("Loaded", locale: locale)
+        case .loading:
+            return appLocalizedString("Loading", locale: locale)
+        case .sleeping:
+            return appLocalizedString("Sleeping", locale: locale)
+        case .downloading:
+            return appLocalizedString("Downloading", locale: locale)
+        case .failed:
+            return appLocalizedString("Failed", locale: locale)
+        case .unloaded:
+            return appLocalizedString("Available", locale: locale)
+        case .unknown(let value):
+            return value
+        case nil:
+            return appLocalizedString("Configured", locale: locale)
+        }
+    }
+
+    private var systemImage: String {
+        guard isEnabled else {
+            return "pause.circle"
+        }
+        switch state {
+        case .loaded:
+            return "circle.fill"
+        case .loading, .downloading:
+            return "arrow.triangle.2.circlepath"
+        case .sleeping:
+            return "moon.zzz"
+        case .failed:
+            return "exclamationmark.triangle.fill"
+        case .unloaded, .unknown, nil:
+            return "circle"
+        }
+    }
+
+    private var color: Color {
+        guard isEnabled else {
+            return .secondary
+        }
+        switch state {
+        case .loaded:
+            return .green
+        case .loading, .downloading:
+            return .blue
+        case .sleeping:
+            return .indigo
+        case .failed:
+            return .red
+        case .unloaded, .unknown, nil:
+            return .secondary
+        }
+    }
+}
+
+private enum ModelAvailabilityChoice:
+    String,
+    CaseIterable,
+    Identifiable
+{
+    case off
+    case onDemand
+    case atStartup
+
+    var id: Self { self }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .off:
+            "Off"
+        case .onDemand:
+            "On Demand"
+        case .atStartup:
+            "At Startup"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .off:
+            "pause.circle"
+        case .onDemand:
+            "bolt"
+        case .atStartup:
+            "power"
+        }
+    }
+}
+
 private enum OptionalBooleanChoice:
     String,
     CaseIterable,
@@ -1635,7 +2529,7 @@ private enum OptionalBooleanChoice:
     func localizedTitle(locale: Locale) -> String {
         switch self {
         case .runtimeDefault:
-            appLocalizedString("Runtime default", locale: locale)
+            appLocalizedString("Global default", locale: locale)
         case .enabled:
             appLocalizedString("On", locale: locale)
         case .disabled:
@@ -1669,11 +2563,22 @@ private enum ProfileEditorLevel:
     var title: LocalizedStringKey {
         switch self {
         case .basic:
-            "Basic"
+            "Essentials"
         case .performance:
             "Performance"
         case .advanced:
-            "Advanced"
+            "Expert"
+        }
+    }
+
+    var description: LocalizedStringKey {
+        switch self {
+        case .basic:
+            "Set availability, names, context size, and GPU offload."
+        case .performance:
+            "Also tune threads, batching, cache types, and unload behavior."
+        case .advanced:
+            "Also configure companion models, generation defaults, prompts, and raw arguments."
         }
     }
 
@@ -1682,7 +2587,7 @@ private enum ProfileEditorLevel:
     }
 }
 
-private struct CapabilitySupportBadge: View {
+struct CapabilitySupportBadge: View {
     let support: RuntimeFlagSupport
     @Environment(\.locale) private var locale
 

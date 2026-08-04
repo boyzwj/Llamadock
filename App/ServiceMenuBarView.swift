@@ -4,42 +4,51 @@ import SwiftUI
 
 struct ServiceMenuBarView: View {
     @Environment(AppModel.self) private var appModel
-    @Environment(\.openSettings) private var openSettings
-    @Environment(\.openWindow) private var openWindow
     @Environment(\.locale) private var locale
+    let presentMainWindow: () -> Void
+
+    init(
+        presentMainWindow: @escaping () -> Void = {}
+    ) {
+        self.presentMainWindow = presentMainWindow
+    }
 
     var body: some View {
         statusHeader
 
-        if let profile = appModel.profile {
-            LabeledContent("Profile", value: profile.name)
-            LabeledContent(
-                "Model",
-                value: URL(filePath: profile.model.mainPath)
-                    .deletingPathExtension()
-                    .lastPathComponent
+        LabeledContent(
+            "Model Settings",
+            value: String(
+                format: localized("%lld enabled"),
+                Int64(appModel.enabledRouterProfiles.count)
             )
-        }
+        )
 
-        if let run = appModel.serverSnapshot.run {
-            LabeledContent(
-                "API",
-                value: run.baseURL
+        LabeledContent(
+            "Loaded Models",
+            value: appModel.serverSnapshot.run == nil
+                ? "—"
+                : "\(appModel.loadedServerModelCount)"
+        )
+
+        LabeledContent(
+            "API",
+            value: appModel.serverSnapshot.run.map {
+                $0.baseURL
                     .appending(path: "v1")
                     .absoluteString
-            )
-            TimelineView(
-                .periodic(from: .now, by: 1)
-            ) { context in
-                LabeledContent(
-                    "Uptime",
-                    value: formattedUptime(
-                        since: run.processStartTime,
-                        now: context.date
-                    )
+            } ?? "—"
+        )
+
+        LabeledContent(
+            "Uptime",
+            value: appModel.serverSnapshot.run.map {
+                formattedUptime(
+                    since: $0.processStartTime,
+                    now: Date()
                 )
-            }
-        }
+            } ?? "—"
+        )
 
         Divider()
 
@@ -51,7 +60,7 @@ struct ServiceMenuBarView: View {
         .disabled(!appModel.canStartServer)
         .help(
             appModel.startServerBlockReason
-                ?? localized("Start the selected launch profile.")
+                ?? localized("Start the configured multi-model router.")
         )
 
         Button("Stop Server", systemImage: "stop.fill") {
@@ -105,16 +114,11 @@ struct ServiceMenuBarView: View {
 
         Divider()
 
-        Button("Show LlamaDock", systemImage: "macwindow") {
-            openWindow(id: "main")
-            NSApp.activate(ignoringOtherApps: true)
+        Button("Dashboard", systemImage: "gauge.with.dots.needle.67percent") {
+            appModel.selectedSection = .overview
+            presentMainWindow()
         }
-
-        Button("Settings…", systemImage: "gear") {
-            openSettings()
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        .keyboardShortcut(",", modifiers: [.command])
+        .keyboardShortcut("d", modifiers: [.command])
 
         Divider()
 

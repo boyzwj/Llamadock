@@ -242,7 +242,8 @@ public actor LocalModelScanner {
             guard
                 values.isRegularFile == true,
                 candidate.pathExtension.lowercased() == "gguf",
-                !isTemporaryFile(candidate)
+                !isTemporaryFile(candidate),
+                !isSecondaryGGUFShard(candidate)
             else {
                 continue
             }
@@ -333,6 +334,34 @@ public actor LocalModelScanner {
         return name.hasSuffix(".part")
             || name.hasSuffix(".tmp")
             || name.hasSuffix(".download")
+    }
+
+    private func isSecondaryGGUFShard(
+        _ url: URL
+    ) -> Bool {
+        let components = url.deletingPathExtension()
+            .lastPathComponent
+            .split(separator: "-", omittingEmptySubsequences: false)
+        guard
+            components.count >= 3,
+            components[components.count - 2] == "of"
+        else {
+            return false
+        }
+        let indexText = components[components.count - 3]
+        let countText = components[components.count - 1]
+        guard
+            indexText.count == 5,
+            countText.count == 5,
+            let index = Int(indexText),
+            let count = Int(countText),
+            count > 1,
+            index > 1,
+            index <= count
+        else {
+            return false
+        }
+        return true
     }
 
     private func role(

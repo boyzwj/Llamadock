@@ -10,7 +10,8 @@ struct DownloadsView: View {
         LlamaDockPage {
             LlamaDockPageHeader(
                 "Downloads",
-                subtitle: "Hugging Face download queue and imported models"
+                subtitle:
+                    "Hugging Face and ModelScope download queue"
             ) {
                 Button("Browse Models", systemImage: "magnifyingglass") {
                     appModel.selectedSection = .models
@@ -28,9 +29,9 @@ struct DownloadsView: View {
                 EmptyStateAction(
                     title: "No Downloads",
                     description:
-                        "Browse Hugging Face models, choose a complete GGUF artifact, and add it to this queue.",
+                        "Browse an online model source, choose a complete GGUF artifact, and add it to this queue.",
                     systemImage: "arrow.down.circle",
-                    actionTitle: "Browse Hugging Face"
+                    actionTitle: "Browse Models"
                 ) {
                     appModel.selectedSection = .models
                 }
@@ -70,7 +71,7 @@ struct DownloadsView: View {
                             cleanup: {
                                 Task {
                                     await appModel
-                                        .discardFailedModelDownload(
+                                        .discardModelDownload(
                                             id: job.id
                                         )
                                 }
@@ -215,6 +216,14 @@ private struct DownloadJobCard: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
+                        Label(
+                            job.source.localizedTitle(
+                                locale: locale
+                            ),
+                            systemImage: job.source.systemImage
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                     }
 
                     Spacer()
@@ -270,7 +279,10 @@ private struct DownloadJobCard: View {
                             action: cancel
                         )
                     }
-                    if job.state == .failed {
+                    if
+                        [.failed, .cancelled].contains(job.state),
+                        !isActive
+                    {
                         Button(
                             "Clean Up",
                             systemImage: "trash",
@@ -279,7 +291,7 @@ private struct DownloadJobCard: View {
                             isShowingCleanupConfirmation = true
                         }
                         .help(
-                            "Delete unfinished files and remove this failed task."
+                            "Delete unfinished files and remove this download task."
                         )
                     }
                     if job.state == .completed {
@@ -309,7 +321,7 @@ private struct DownloadJobCard: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(
-                "This permanently deletes unfinished files for \(job.displayName) and removes the failed task from the download queue. This cannot be undone."
+                "This permanently deletes unfinished files for \(job.displayName) and removes the task from the download queue. This cannot be undone."
             )
         }
     }
@@ -341,6 +353,26 @@ private func localizedDownloadError(
         )
     default:
         error
+    }
+}
+
+private extension ModelHubSource {
+    func localizedTitle(locale: Locale) -> String {
+        switch self {
+        case .huggingFace:
+            appLocalizedString("Hugging Face", locale: locale)
+        case .modelScope:
+            appLocalizedString("ModelScope", locale: locale)
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .huggingFace:
+            "globe"
+        case .modelScope:
+            "network"
+        }
     }
 }
 

@@ -43,30 +43,25 @@ struct RuntimeProbeTests {
         #expect(
             invocations.map(\.arguments)
                 == [
-                    ["--device", "none", "--version"],
-                    ["--device", "none", "--help"],
+                    ["--version"],
+                    ["--help"],
                 ]
         )
     }
 
-    @Test("falls back when an older runtime rejects the probe device flag")
-    func fallsBackWithoutDeviceFlag() async {
+    @Test("falls back with devices disabled after device initialization fails")
+    func fallsBackWithDevicesDisabled() async {
         let runner = QueueProcessRunner(
             responses: [
                 ProcessResult(
                     terminationStatus: 1,
                     standardOutput: "",
-                    standardError: "unknown argument: --device"
+                    standardError: "failed to initialize Metal device"
                 ),
                 ProcessResult(
                     terminationStatus: 0,
                     standardOutput: "llama-server version b999",
                     standardError: ""
-                ),
-                ProcessResult(
-                    terminationStatus: 1,
-                    standardOutput: "",
-                    standardError: "unrecognized option '--device'"
                 ),
                 ProcessResult(
                     terminationStatus: 0,
@@ -85,9 +80,8 @@ struct RuntimeProbeTests {
         #expect(
             await runner.recordedInvocations().map(\.arguments)
                 == [
-                    ["--device", "none", "--version"],
                     ["--version"],
-                    ["--device", "none", "--help"],
+                    ["--device", "none", "--version"],
                     ["--help"],
                 ]
         )
@@ -124,6 +118,12 @@ struct RuntimeProbeTests {
                     standardOutput: "",
                     standardError: "",
                     timedOut: true
+                ),
+                ProcessResult(
+                    terminationStatus: 9,
+                    standardOutput: "",
+                    standardError: "",
+                    timedOut: true
                 )
             ]
         )
@@ -132,7 +132,51 @@ struct RuntimeProbeTests {
         let report = await probe.probe(customCandidate)
 
         #expect(report.validation == .invalid(reason: "Version probe timed out after 5 seconds."))
-        #expect(await runner.recordedInvocations().count == 1)
+        #expect(
+            await runner.recordedInvocations().map(\.arguments)
+                == [
+                    ["--version"],
+                    ["--device", "none", "--version"],
+                ]
+        )
+    }
+
+    @Test("retries a timed out ordinary probe with devices disabled")
+    func retriesTimedOutVersionProbe() async {
+        let runner = QueueProcessRunner(
+            responses: [
+                ProcessResult(
+                    terminationStatus: 9,
+                    standardOutput: "",
+                    standardError: "",
+                    timedOut: true
+                ),
+                ProcessResult(
+                    terminationStatus: 0,
+                    standardOutput: "llama-server version b1234",
+                    standardError: ""
+                ),
+                ProcessResult(
+                    terminationStatus: 0,
+                    standardOutput: "--model FNAME\n--models-preset PATH",
+                    standardError: ""
+                ),
+            ]
+        )
+        let probe = RuntimeProbe(processRunner: runner)
+
+        let report = await probe.probe(customCandidate)
+
+        #expect(report.validation == .valid)
+        #expect(report.serverVersionOutput == "llama-server version b1234")
+        #expect(
+            await runner.recordedInvocations().map(\.arguments)
+                == [
+                    ["--version"],
+                    ["--device", "none", "--version"],
+                    ["--help"],
+                ]
+        )
     }
 
     @Test("keeps a valid version when help cannot be parsed")
@@ -177,6 +221,50 @@ struct RuntimeProbeTests {
         #expect(await runner.recordedInvocations().isEmpty)
     }
 
+    @Test("restores a validated managed runtime without launching it")
+    func restoresValidatedManagedRuntime() async {
+        let runner = QueueProcessRunner(responses: [])
+        let probe = RuntimeProbe(processRunner: runner)
+        let root = URL(
+            filePath: "/managed/b1234-macos-arm64",
+            directoryHint: .isDirectory
+        )
+        let llamaURL = root.appending(path: "llama")
+        let serverURL = root.appending(path: "llama-server")
+        let validatedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let capabilities = RuntimeCapabilitiesParser().parse(
+            "--models-preset PATH --host HOST --port PORT",
+            detectedAt: validatedAt
+        )
+        let record = ManagedRuntimeRecord(
+            id: "managed:b1234:macos-arm64",
+            tag: "b1234",
+            build: 1_234,
+            architecture: .arm64,
+            installDirectory: root,
+            llamaURL: llamaURL,
+            serverURL: serverURL,
+            installedAt: validatedAt,
+            validatedAt: validatedAt,
+            versionOutput: "version: 1234",
+            archiveSHA256: String(repeating: "a", count: 64),
+            capabilities: capabilities
+        )
+
+        let report = probe.restoreValidatedManagedRuntime(
+            record,
+            fileSystem: ProbeFileSystem(
+                executables: [llamaURL, serverURL]
+            )
+        )
+
+        #expect(report.validation == .valid)
+        #expect(report.serverVersionOutput == record.versionOutput)
+        #expect(report.capabilities == capabilities)
+        #expect(report.warning == nil)
+        #expect(await runner.recordedInvocations().isEmpty)
+    }
+
     private var customCandidate: RuntimeCandidate {
         RuntimeCandidate(
             source: .custom,
@@ -204,5 +292,13 @@ private actor QueueProcessRunner: ProcessRunning {
 
     func recordedInvocations() -> [ProcessInvocation] {
         invocations
+    }
+}
+
+private struct ProbeFileSystem: FileSystemInspecting {
+    let executables: Set<URL>
+
+    func isExecutableFile(at url: URL) -> Bool {
+        executables.contains(url)
     }
 }

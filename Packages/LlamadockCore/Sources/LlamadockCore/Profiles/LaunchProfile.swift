@@ -107,13 +107,54 @@ public struct SamplingOptions: Codable, Equatable, Sendable {
     }
 }
 
+public struct RouterModelOptions: Codable, Equatable, Sendable {
+    public var identifier: String
+    public var isEnabled: Bool
+    public var loadOnStartup: Bool
+    public var stopTimeout: Int?
+
+    public init(
+        identifier: String,
+        isEnabled: Bool = true,
+        loadOnStartup: Bool = false,
+        stopTimeout: Int? = nil
+    ) {
+        self.identifier = identifier
+        self.isEnabled = isEnabled
+        self.loadOnStartup = loadOnStartup
+        self.stopTimeout = stopTimeout
+    }
+
+    public static func defaultIdentifier(
+        name: String,
+        id: UUID
+    ) -> String {
+        let normalized = name
+            .lowercased()
+            .unicodeScalars
+            .map { scalar -> Character in
+                CharacterSet.alphanumerics.contains(scalar)
+                    ? Character(String(scalar))
+                    : "-"
+            }
+        let collapsed = String(normalized)
+            .split(separator: "-", omittingEmptySubsequences: true)
+            .joined(separator: "-")
+        if !collapsed.isEmpty {
+            return collapsed
+        }
+        return "model-\(id.uuidString.prefix(8).lowercased())"
+    }
+}
+
 public struct LaunchProfile: Codable, Equatable, Identifiable, Sendable {
-    public static let currentSchemaVersion = 2
+    public static let currentSchemaVersion = 5
 
     public var schemaVersion: Int
     public var id: UUID
     public var name: String
     public var model: ModelPaths
+    public var router: RouterModelOptions
     public var runtimeSelection: RuntimeSelection
     public var server: ServerOptions
     public var sampling: SamplingOptions
@@ -127,6 +168,7 @@ public struct LaunchProfile: Codable, Equatable, Identifiable, Sendable {
         id: UUID = UUID(),
         name: String,
         model: ModelPaths,
+        router: RouterModelOptions? = nil,
         runtimeSelection: RuntimeSelection = RuntimeSelection(),
         server: ServerOptions = ServerOptions(),
         sampling: SamplingOptions = SamplingOptions(),
@@ -139,6 +181,12 @@ public struct LaunchProfile: Codable, Equatable, Identifiable, Sendable {
         self.id = id
         self.name = name
         self.model = model
+        self.router = router ?? RouterModelOptions(
+            identifier: RouterModelOptions.defaultIdentifier(
+                name: name,
+                id: id
+            )
+        )
         self.runtimeSelection = runtimeSelection
         self.server = server
         self.sampling = sampling

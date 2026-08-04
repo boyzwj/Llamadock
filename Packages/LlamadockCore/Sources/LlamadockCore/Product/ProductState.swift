@@ -18,19 +18,21 @@ public enum ProductDestination:
     Sendable
 {
     case overview
-    case service
     case logs
+    case benchmark
     case models
     case downloads
     case runtimes
+    case settings
+    case about
 
     public var id: Self { self }
 
     public var group: ProductNavigationGroup {
         switch self {
-        case .overview, .service, .logs:
+        case .overview, .logs, .benchmark:
             .run
-        case .models, .downloads, .runtimes:
+        case .models, .downloads, .runtimes, .settings, .about:
             .resources
         }
     }

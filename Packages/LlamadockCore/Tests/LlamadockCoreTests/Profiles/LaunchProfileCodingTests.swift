@@ -9,6 +9,15 @@ struct LaunchProfileCodingTests {
         #expect(ServerOptions().port == 39_281)
     }
 
+    @Test("model profiles inherit global performance defaults")
+    func modelProfilesInheritGlobalDefaults() {
+        let options = ServerOptions()
+
+        #expect(options.contextSize == nil)
+        #expect(options.cacheTypeK == nil)
+        #expect(options.cacheTypeV == nil)
+    }
+
     @Test("round-trips the readable versioned schema")
     func roundTripsSchema() throws {
         let profile = makeProfile()
@@ -27,7 +36,8 @@ struct LaunchProfileCodingTests {
         let json = String(decoding: data, as: UTF8.self)
 
         #expect(decoded == profile)
-        #expect(json.contains(#""schemaVersion" : 2"#))
+        #expect(json.contains(#""schemaVersion" : 5"#))
+        #expect(json.contains(#""router" : {"#))
         #expect(json.contains(#""mainPath" : "/Models/My Model.gguf""#))
         #expect(!json.contains("file:///"))
         #expect(json.contains(#""extraArguments" : ["#))

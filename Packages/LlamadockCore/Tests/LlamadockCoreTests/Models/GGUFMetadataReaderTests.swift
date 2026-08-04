@@ -219,6 +219,85 @@ struct GGUFMetadataReaderTests {
         }
     }
 
+    @Test("inherits architecture only for non-primary GGUF split files")
+    func readsSecondarySplitWithInheritedArchitecture() throws {
+        let secondaryURL = makeTemporaryURL()
+        let primaryWithoutArchitectureURL = makeTemporaryURL()
+        defer {
+            try? FileManager.default.removeItem(at: secondaryURL)
+            try? FileManager.default.removeItem(
+                at: primaryWithoutArchitectureURL
+            )
+        }
+        let secondary = GGUFFixture(
+            metadata: [
+                ("split.no", .uint16(1)),
+                ("split.count", .uint16(2)),
+                ("split.tensors.count", .uint32(2)),
+            ],
+            tensors: [
+                TensorFixture(
+                    name: "secondary.weight",
+                    dimensions: [4],
+                    type: 0,
+                    offset: 0
+                )
+            ]
+        )
+        try secondary.data().write(to: secondaryURL)
+        let primaryWithoutArchitecture = GGUFFixture(
+            metadata: [
+                ("split.no", .uint16(0)),
+                ("split.count", .uint16(2)),
+                ("split.tensors.count", .uint32(2)),
+            ],
+            tensors: [
+                TensorFixture(
+                    name: "primary.weight",
+                    dimensions: [4],
+                    type: 0,
+                    offset: 0
+                )
+            ]
+        )
+        try primaryWithoutArchitecture.data().write(
+            to: primaryWithoutArchitectureURL
+        )
+
+        #expect(
+            throws: GGUFMetadataError.missingRequiredMetadata(
+                "general.architecture"
+            )
+        ) {
+            try GGUFMetadataReader().read(from: secondaryURL)
+        }
+
+        let metadata = try GGUFMetadataReader().readSplitShard(
+            from: secondaryURL,
+            inheritingArchitecture: "llama"
+        )
+        #expect(metadata.architecture == "llama")
+        #expect(
+            metadata.shard
+                == GGUFShardMetadata(
+                    zeroBasedIndex: 1,
+                    count: 2,
+                    totalTensorCount: 2
+                )
+        )
+
+        #expect(
+            throws: GGUFMetadataError.missingRequiredMetadata(
+                "general.architecture"
+            )
+        ) {
+            try GGUFMetadataReader().readSplitShard(
+                from: primaryWithoutArchitectureURL,
+                inheritingArchitecture: "llama"
+            )
+        }
+    }
+
     private func makeTemporaryURL() -> URL {
         FileManager.default.temporaryDirectory.appending(
             path: "LlamadockGGUF-\(UUID().uuidString).gguf",

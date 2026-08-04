@@ -117,6 +117,42 @@ public struct RuntimeProbe: Sendable {
         )
     }
 
+    public func restoreValidatedManagedRuntime(
+        _ record: ManagedRuntimeRecord,
+        fileSystem: any FileSystemInspecting =
+            LocalFileSystemInspector()
+    ) -> RuntimeProbeReport {
+        let candidate = RuntimeCandidate(
+            source: .managed,
+            llamaURL: record.llamaURL,
+            serverURL: record.serverURL,
+            id: record.id
+        )
+        guard
+            fileSystem.isExecutableFile(at: record.llamaURL),
+            fileSystem.isExecutableFile(at: record.serverURL)
+        else {
+            return invalidReport(
+                candidate: candidate,
+                reason: "A validated managed runtime executable is missing."
+            )
+        }
+
+        let capabilities = record.capabilities
+            ?? capabilitiesParser.parse(
+                "",
+                detectedAt: record.validatedAt
+            )
+        return RuntimeProbeReport(
+            candidate: candidate,
+            validation: .valid,
+            serverVersionOutput: record.versionOutput,
+            llamaVersionOutput: record.versionOutput,
+            capabilities: capabilities,
+            warning: nil
+        )
+    }
+
     private func probeCapabilities(
         serverURL: URL,
         detectedAt: Date
@@ -185,35 +221,39 @@ public struct RuntimeProbe: Sendable {
         executableURL: URL,
         arguments: [String]
     ) async throws -> ProcessResult {
-        let deviceDisabledArguments = [
-            "--device",
-            "none",
-        ] + arguments
         let primaryResult = try await processRunner.run(
-            try ProcessInvocation(
-                executableURL: executableURL,
-                arguments: deviceDisabledArguments
-            ),
-            timeout: .seconds(timeoutSeconds)
-        )
-
-        guard shouldRetryWithoutDeviceFlag(primaryResult) else {
-            return primaryResult
-        }
-
-        return try await processRunner.run(
             try ProcessInvocation(
                 executableURL: executableURL,
                 arguments: arguments
             ),
             timeout: .seconds(timeoutSeconds)
         )
+
+        guard shouldRetryWithDeviceDisabled(primaryResult) else {
+            return primaryResult
+        }
+
+        let deviceDisabledArguments = [
+            "--device",
+            "none",
+        ] + arguments
+        return try await processRunner.run(
+            try ProcessInvocation(
+                executableURL: executableURL,
+                arguments: deviceDisabledArguments
+            ),
+            timeout: .seconds(timeoutSeconds)
+        )
     }
 
-    private func shouldRetryWithoutDeviceFlag(
+    private func shouldRetryWithDeviceDisabled(
         _ result: ProcessResult
     ) -> Bool {
-        guard result.terminationStatus != 0, !result.timedOut else {
+        if result.timedOut {
+            return true
+        }
+
+        guard result.terminationStatus != 0 else {
             return false
         }
 
@@ -223,17 +263,20 @@ public struct RuntimeProbe: Sendable {
         ]
         .joined(separator: "\n")
         .lowercased()
-        guard output.contains("device") else {
-            return false
-        }
-
-        return [
-            "unknown",
-            "unrecognized",
-            "invalid argument",
-            "invalid option",
-            "unsupported",
+        let mentionsDevice = [
+            "device",
+            "gpu",
+            "metal",
+            "cuda",
         ].contains { output.contains($0) }
+        let isInitializationFailure = [
+            "failed",
+            "failure",
+            "unavailable",
+            "initialize",
+            "initialise",
+        ].contains { output.contains($0) }
+        return mentionsDevice && isInitializationFailure
     }
 
     private func invalidReport(

@@ -7,11 +7,17 @@ struct ProductStateTests {
     func navigationGroups() {
         #expect(
             ProductDestination.destinations(in: .run)
-                == [.overview, .service, .logs]
+                == [.overview, .logs, .benchmark]
         )
         #expect(
             ProductDestination.destinations(in: .resources)
-                == [.models, .downloads, .runtimes]
+                == [
+                    .models,
+                    .downloads,
+                    .runtimes,
+                    .settings,
+                    .about,
+                ]
         )
         #expect(
             ProductNavigationGroup.allCases

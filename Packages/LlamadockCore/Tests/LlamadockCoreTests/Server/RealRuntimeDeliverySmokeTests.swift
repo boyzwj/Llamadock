@@ -59,7 +59,29 @@ struct RealRuntimeDeliverySmokeTests {
                 profile: profile,
                 runtime: runtime
             )
-        let controller = ServerProcessController()
+        let ownershipDirectory = FileManager.default.temporaryDirectory
+            .appending(
+                path: "llamadock-real-ownership-\(UUID().uuidString)",
+                directoryHint: .isDirectory
+            )
+        try FileManager.default.createDirectory(
+            at: ownershipDirectory,
+            withIntermediateDirectories: true
+        )
+        defer {
+            try? FileManager.default.removeItem(
+                at: ownershipDirectory
+            )
+        }
+        let ownershipStore = JSONServerOwnershipStore(
+            fileURL: ownershipDirectory.appending(
+                path: "ownership.json",
+                directoryHint: .notDirectory
+            )
+        )
+        let controller = ServerProcessController(
+            ownershipStore: ownershipStore
+        )
 
         do {
             try await controller.start(
@@ -75,6 +97,15 @@ struct RealRuntimeDeliverySmokeTests {
             #expect(ready.state == .ready)
             #expect(ready.run?.profileID == profile.id)
             #expect(ready.run?.command == invocation)
+            let ownership = try await ownershipStore.load()
+            #expect(
+                ownership?.processIdentifier
+                    == ready.run?.processIdentifier
+            )
+            #expect(
+                ownership?.executableURL
+                    == invocation.executableURL
+            )
             #expect(
                 ready.logs.contains {
                     $0.message.localizedCaseInsensitiveContains("server")
@@ -89,5 +120,6 @@ struct RealRuntimeDeliverySmokeTests {
         let stopped = await controller.snapshot()
         #expect(stopped.state == .stopped)
         #expect(stopped.run == nil)
+        #expect(try await ownershipStore.load() == nil)
     }
 }

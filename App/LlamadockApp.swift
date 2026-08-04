@@ -9,33 +9,13 @@ struct LlamadockApp: App {
     @State private var appModel = AppModel()
     @AppStorage(AppLanguage.storageKey)
     private var appLanguage = AppLanguage.system
-    @AppStorage(AppAppearance.showMenuBarIconKey)
-    private var showMenuBarIcon = true
-    @AppStorage(AppAppearance.showDockIconKey)
-    private var showDockIcon = true
 
     var body: some Scene {
-        WindowGroup(id: "main") {
-            ContentView()
+        Settings {
+            SettingsView()
                 .environment(appModel)
                 .environment(\.locale, appLanguage.locale)
-                .task {
-                    appDelegate.shutdownOwnedServer = {
-                        await appModel.shutdown()
-                    }
-                    appDelegate.setDockIconVisible(showDockIcon)
-                    await appModel.bootstrap()
-                }
-                .onChange(of: showDockIcon) {
-                    appDelegate.setDockIconVisible(showDockIcon)
-                }
-                .onChange(of: showMenuBarIcon) {
-                    if !showMenuBarIcon && !showDockIcon {
-                        showDockIcon = true
-                    }
-                }
         }
-        .defaultSize(width: 1_080, height: 720)
         .commands {
             LlamaDockCommands(
                 appModel: appModel,
@@ -43,18 +23,14 @@ struct LlamadockApp: App {
             )
         }
 
-        Settings {
-            SettingsView()
-                .environment(appModel)
-                .environment(\.locale, appLanguage.locale)
-        }
-
-        MenuBarExtra(
-            isInserted: $showMenuBarIcon
-        ) {
-            ServiceMenuBarView()
-                .environment(appModel)
-                .environment(\.locale, appLanguage.locale)
+        MenuBarExtra {
+            ServiceMenuBarView {
+                appDelegate.presentMainWindow(
+                    MainWindowRoot(appModel: appModel)
+                )
+            }
+            .environment(appModel)
+            .environment(\.locale, appLanguage.locale)
         } label: {
             Label {
                 Text("LlamaDock")
@@ -69,8 +45,27 @@ struct LlamadockApp: App {
                     "LlamaDock server \(appModel.serviceStatus.localizedString(locale: appLanguage.locale))"
                 )
             )
+            .task {
+                appDelegate.shutdownOwnedServer = {
+                    await appModel.shutdown()
+                }
+                await appModel.bootstrap()
+            }
         }
         .menuBarExtraStyle(.menu)
+    }
+}
+
+@MainActor
+private struct MainWindowRoot: View {
+    let appModel: AppModel
+    @AppStorage(AppLanguage.storageKey)
+    private var appLanguage = AppLanguage.system
+
+    var body: some View {
+        ContentView()
+            .environment(appModel)
+            .environment(\.locale, appLanguage.locale)
     }
 }
 
@@ -88,18 +83,18 @@ private struct LlamaDockCommands: Commands {
         }
 
         CommandMenu(localized("Navigate")) {
-            Button(localized("Overview")) {
+            Button(localized("Dashboard")) {
                 appModel.selectedSection = .overview
             }
             .keyboardShortcut("1", modifiers: [.command])
 
-            Button(localized("Service")) {
-                appModel.selectedSection = .service
+            Button(localized("Logs")) {
+                appModel.selectedSection = .logs
             }
             .keyboardShortcut("2", modifiers: [.command])
 
-            Button(localized("Logs")) {
-                appModel.selectedSection = .logs
+            Button(localized("Benchmark")) {
+                appModel.selectedSection = .benchmark
             }
             .keyboardShortcut("3", modifiers: [.command])
 
@@ -117,6 +112,17 @@ private struct LlamaDockCommands: Commands {
                 appModel.selectedSection = .runtimes
             }
             .keyboardShortcut("6", modifiers: [.command])
+
+            Button(localized("Settings")) {
+                appModel.selectedSettingsTab = .global
+                appModel.selectedSection = .settings
+            }
+            .keyboardShortcut("7", modifiers: [.command])
+
+            Button(localized("About")) {
+                appModel.selectedSection = .about
+            }
+            .keyboardShortcut("8", modifiers: [.command])
 
             Divider()
 

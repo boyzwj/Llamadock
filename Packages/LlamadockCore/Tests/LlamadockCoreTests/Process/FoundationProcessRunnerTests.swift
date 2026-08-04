@@ -60,6 +60,28 @@ struct FoundationProcessRunnerTests {
         #expect(start.duration(to: clock.now) < .seconds(1))
     }
 
+    @Test("timeout stays bounded when a descendant inherits output pipes")
+    func closesInheritedPipesAfterTimeout() async throws {
+        let runner = FoundationProcessRunner()
+        let invocation = try ProcessInvocation(
+            executableURL: URL(filePath: "/bin/sh"),
+            arguments: [
+                "-c",
+                "/bin/sleep 2 & wait",
+            ]
+        )
+        let clock = ContinuousClock()
+        let start = clock.now
+
+        let result = try await runner.run(
+            invocation,
+            timeout: .milliseconds(50)
+        )
+
+        #expect(result.timedOut)
+        #expect(start.duration(to: clock.now) < .seconds(1))
+    }
+
     @Test("concurrent verbose probes do not starve the cooperative executor")
     func completesConcurrentVerboseProbes() async throws {
         let runner = FoundationProcessRunner()

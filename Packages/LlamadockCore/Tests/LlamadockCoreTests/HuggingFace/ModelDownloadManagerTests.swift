@@ -91,6 +91,127 @@ struct ModelDownloadManagerTests {
         )
     }
 
+    @Test("routes ModelScope jobs without Hugging Face credentials")
+    func routesModelScopeDownload() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directories = ApplicationDirectories(root: root)
+        let payload = minimalGGUF(name: "modelscope")
+        let transport = FixtureModelDownloadTransport(
+            payloads: [payload]
+        )
+        let manager = ModelDownloadManager(
+            directories: directories,
+            transport: transport,
+            urlResolver: StaticHuggingFaceFileURLResolver(
+                url: URL(string: "http://should-not-be-used.invalid")!
+            ),
+            modelScopeURLResolver:
+                StaticModelScopeFileURLResolver(
+                    url: URL(
+                        string:
+                            "https://modelscope.cn/api/v1/models/owner/repo/repo"
+                    )!
+                ),
+            tokenStore: StaticHuggingFaceTokenStore(
+                value: "hf_must_not_leave_the_app"
+            )
+        )
+
+        let id = try await manager.enqueue(
+            request(
+                source: .modelScope,
+                files: [
+                    requestFile(
+                        artifactID: "main",
+                        role: .main,
+                        path: "model.gguf",
+                        payload: payload
+                    ),
+                ]
+            )
+        )
+
+        let completed = try await waitForState(
+            .completed,
+            id: id,
+            manager: manager
+        )
+        #expect(completed.source == .modelScope)
+        #expect(
+            completed.destinationRelativeDirectory
+                .hasPrefix("modelscope/")
+        )
+        let transfer = try #require(
+            await transport.transfers().first
+        )
+        #expect(
+            transfer.request.value(
+                forHTTPHeaderField: "Authorization"
+            ) == nil
+        )
+        #expect(
+            transfer.request.url?.host == "modelscope.cn"
+        )
+    }
+
+    @Test("accepts GGUF splits whose later files omit model-level metadata")
+    func acceptsStandardGGUFSplitMetadataLayout() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directories = ApplicationDirectories(root: root)
+        let payloads = [
+            splitGGUF(
+                name: "Split Model",
+                index: 0,
+                count: 2,
+                includesModelMetadata: true
+            ),
+            splitGGUF(
+                name: "Split Model",
+                index: 1,
+                count: 2,
+                includesModelMetadata: false
+            ),
+        ]
+        let transport = FixtureModelDownloadTransport(
+            payloads: payloads
+        )
+        let manager = ModelDownloadManager(
+            directories: directories,
+            transport: transport,
+            tokenStore: StaticHuggingFaceTokenStore()
+        )
+
+        let id = try await manager.enqueue(
+            request(
+                source: .modelScope,
+                files: [
+                    requestFile(
+                        artifactID: "main",
+                        role: .main,
+                        path: "model-00001-of-00002.gguf",
+                        payload: payloads[0]
+                    ),
+                    requestFile(
+                        artifactID: "main",
+                        role: .main,
+                        path: "model-00002-of-00002.gguf",
+                        payload: payloads[1]
+                    ),
+                ]
+            )
+        )
+
+        let completed = try await waitForState(
+            .completed,
+            id: id,
+            manager: manager
+        )
+        #expect(completed.files.allSatisfy { $0.isVerified })
+        #expect(await transport.transfers().count == 2)
+    }
+
     @Test("restores a partial file and resumes with Range")
     func restoresAndResumes() async throws {
         let root = temporaryRoot()
@@ -163,7 +284,7 @@ struct ModelDownloadManagerTests {
         #expect(
             transfer.request.value(
                 forHTTPHeaderField: "Range"
-            ) == "bytes=\(prefixLength)-"
+            ) == "bytes=\(prefixLength)-\(fullPayload.count - 1)"
         )
         let installed = directories.models
             .appending(
@@ -173,6 +294,179 @@ struct ModelDownloadManagerTests {
         #expect(
             try Data(contentsOf: installed) == fullPayload
         )
+    }
+
+    @Test("downloads large files in bounded validated ranges")
+    func downloadsInBoundedRanges() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let payload = minimalGGUF(name: "chunked")
+        let transport = RangeFixtureModelDownloadTransport(
+            payload: payload
+        )
+        let manager = ModelDownloadManager(
+            directories: ApplicationDirectories(root: root),
+            transport: transport,
+            tokenStore: StaticHuggingFaceTokenStore(),
+            retryPolicy: ModelDownloadRetryPolicy(
+                chunkSizeBytes: 32,
+                maximumAttemptsPerChunk: 2,
+                baseDelayNanoseconds: 0,
+                maximumDelayNanoseconds: 0
+            ),
+            retryDelay: { _ in }
+        )
+
+        let id = try await manager.enqueue(
+            request(
+                files: [
+                    requestFile(
+                        artifactID: "main",
+                        role: .main,
+                        path: "model.gguf",
+                        payload: payload
+                    ),
+                ]
+            )
+        )
+
+        let completed = try await waitForState(
+            .completed,
+            id: id,
+            manager: manager
+        )
+        let transfers = await transport.transfers()
+        #expect(transfers.count > 1)
+        #expect(
+            transfers.allSatisfy {
+                guard let range = $0.expectedRange else {
+                    return false
+                }
+                return range.end - range.start + 1 <= 32
+                    && range.total == Int64(payload.count)
+            }
+        )
+        #expect(
+            zip(transfers, transfers.dropFirst()).allSatisfy {
+                previous, next in
+                previous.expectedRange!.end + 1
+                    == next.expectedRange!.start
+            }
+        )
+        #expect(
+            transfers.dropFirst().allSatisfy {
+                $0.expectedRepositoryCommit == "fixture-commit"
+                    && $0.expectedETag == "\"fixture-etag\""
+            }
+        )
+        #expect(completed.resolvedRevision == "fixture-commit")
+    }
+
+    @Test("automatically resumes a range after a transient disconnect")
+    func retriesInterruptedRange() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let payload = minimalGGUF(name: "retry")
+        let transport = RangeFixtureModelDownloadTransport(
+            payload: payload,
+            failuresRemaining: 1,
+            failureByteCount: 17
+        )
+        let manager = ModelDownloadManager(
+            directories: ApplicationDirectories(root: root),
+            transport: transport,
+            tokenStore: StaticHuggingFaceTokenStore(),
+            retryPolicy: ModelDownloadRetryPolicy(
+                chunkSizeBytes: Int64(payload.count),
+                maximumAttemptsPerChunk: 3,
+                baseDelayNanoseconds: 0,
+                maximumDelayNanoseconds: 0
+            ),
+            retryDelay: { _ in }
+        )
+
+        let id = try await manager.enqueue(
+            request(
+                files: [
+                    requestFile(
+                        artifactID: "main",
+                        role: .main,
+                        path: "model.gguf",
+                        payload: payload
+                    ),
+                ]
+            )
+        )
+
+        _ = try await waitForState(
+            .completed,
+            id: id,
+            manager: manager
+        )
+        let transfers = await transport.transfers()
+        #expect(transfers.count == 2)
+        #expect(transfers[0].expectedRange?.start == 0)
+        #expect(transfers[1].expectedRange?.start == 17)
+        #expect(
+            transfers[1].request.value(
+                forHTTPHeaderField: "Range"
+            ) == "bytes=17-\(payload.count - 1)"
+        )
+        #expect(
+            transfers[1].request.value(
+                forHTTPHeaderField: "If-Range"
+            ) == "\"fixture-etag\""
+        )
+    }
+
+    @Test("reports retry exhaustion after consecutive no-progress failures")
+    func reportsRetryExhaustion() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let payload = minimalGGUF(name: "exhausted")
+        let transport = RangeFixtureModelDownloadTransport(
+            payload: payload,
+            failuresRemaining: 2,
+            failureByteCount: 0
+        )
+        let manager = ModelDownloadManager(
+            directories: ApplicationDirectories(root: root),
+            transport: transport,
+            tokenStore: StaticHuggingFaceTokenStore(),
+            retryPolicy: ModelDownloadRetryPolicy(
+                chunkSizeBytes: Int64(payload.count),
+                maximumAttemptsPerChunk: 2,
+                baseDelayNanoseconds: 0,
+                maximumDelayNanoseconds: 0
+            ),
+            retryDelay: { _ in }
+        )
+
+        let id = try await manager.enqueue(
+            request(
+                files: [
+                    requestFile(
+                        artifactID: "main",
+                        role: .main,
+                        path: "model.gguf",
+                        payload: payload
+                    ),
+                ]
+            )
+        )
+
+        let failed = try await waitForState(
+            .failed,
+            id: id,
+            manager: manager
+        )
+        #expect(failed.files[0].receivedBytes == 0)
+        #expect(
+            failed.error?.contains(
+                "after 2 automatic attempts"
+            ) == true
+        )
+        #expect(await transport.transfers().count == 2)
     }
 
     @Test("cancel removes partial transaction without importing")
@@ -229,6 +523,13 @@ struct ModelDownloadManagerTests {
                 atPath: directories.models.path
                     + "/huggingface"
             )
+        )
+
+        try await manager.discard(id: id)
+        #expect(
+            await manager.snapshot().jobs.allSatisfy {
+                $0.id != id
+            }
         )
     }
 
@@ -306,8 +607,176 @@ struct ModelDownloadManagerTests {
         #expect(
             failed.error?.contains("not a valid GGUF") == true
         )
-        #expect(failed.files[0].receivedBytes == 0)
+        #expect(
+            failed.files[0].receivedBytes
+                == Int64(payload.count)
+        )
         #expect(!failed.files[0].isVerified)
+        #expect(failed.files[0].restartReason == "invalidGGUF")
+    }
+
+    @Test("keeps a rejected full file until the user explicitly retries")
+    func preservesRejectedFileUntilRetry() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directories = ApplicationDirectories(root: root)
+        let expectedPayload = minimalGGUF(name: "expected")
+        var corruptedPayload = expectedPayload
+        corruptedPayload[corruptedPayload.count - 1] ^= 0xff
+        let downloadRequest = request(
+            files: [
+                requestFile(
+                    artifactID: "main",
+                    role: .main,
+                    path: "model.gguf",
+                    payload: expectedPayload
+                ),
+            ]
+        )
+        let firstManager = ModelDownloadManager(
+            directories: directories,
+            transport: FixtureModelDownloadTransport(
+                payloads: [corruptedPayload]
+            ),
+            tokenStore: StaticHuggingFaceTokenStore()
+        )
+        let id = try await firstManager.enqueue(downloadRequest)
+
+        let failed = try await waitForState(
+            .failed,
+            id: id,
+            manager: firstManager
+        )
+        let rejectedURL = directories.downloadJobs
+            .appending(path: id.uuidString)
+            .appending(path: "payload/model.gguf.part")
+        #expect(failed.files[0].restartReason == "checksumMismatch")
+        #expect(
+            FileManager.default.fileExists(
+                atPath: rejectedURL.path
+            )
+        )
+        #expect(
+            try Data(contentsOf: rejectedURL)
+                == corruptedPayload
+        )
+
+        let retryManager = ModelDownloadManager(
+            directories: directories,
+            transport: FixtureModelDownloadTransport(
+                payloads: [expectedPayload]
+            ),
+            tokenStore: StaticHuggingFaceTokenStore()
+        )
+        try await retryManager.restore()
+        try await retryManager.resume(id: id)
+        let completed = try await waitForState(
+            .completed,
+            id: id,
+            manager: retryManager
+        )
+        #expect(completed.files[0].restartReason == nil)
+    }
+
+    @Test("re-verifies a legacy rejected split without downloading it again")
+    func recoversLegacySecondarySplitRejection() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directories = ApplicationDirectories(root: root)
+        let id = UUID()
+        let now = Date()
+        let payloads = [
+            splitGGUF(
+                name: "Recovered Split",
+                index: 0,
+                count: 2,
+                includesModelMetadata: true
+            ),
+            splitGGUF(
+                name: "Recovered Split",
+                index: 1,
+                count: 2,
+                includesModelMetadata: false
+            ),
+        ]
+        let paths = [
+            "weights/model-00001-of-00002.gguf",
+            "weights/model-00002-of-00002.gguf",
+        ]
+        let files = zip(paths, payloads).enumerated().map {
+            index, pair in
+            ModelDownloadFile(
+                artifactID: "main",
+                artifactDisplayName: "model",
+                role: .main,
+                repositoryPath: pair.0,
+                expectedSize: Int64(pair.1.count),
+                expectedSHA256: sha256(pair.1),
+                receivedBytes: Int64(pair.1.count),
+                isVerified: index == 0,
+                restartReason: index == 1
+                    ? "invalidGGUF"
+                    : nil
+            )
+        }
+        let job = ModelDownloadJob(
+            id: id,
+            source: .modelScope,
+            repositoryID: "owner/repo",
+            revision: "master",
+            displayName: "Recovered Split",
+            quantization: "Q4_K_M",
+            destinationRelativeDirectory:
+                "modelscope/owner/repo/master/recovered",
+            files: files,
+            state: .failed,
+            error: "The GGUF model is missing required metadata: general.architecture",
+            createdAt: now,
+            updatedAt: now
+        )
+        try await JSONModelDownloadStore(
+            fileURL: directories.downloadState
+        ).saveJobs([job])
+        for (file, payload) in zip(files, payloads) {
+            let partURL = directories.downloadJobs
+                .appending(path: id.uuidString)
+                .appending(path: "payload")
+                .appending(path: file.repositoryPath + ".part")
+            try FileManager.default.createDirectory(
+                at: partURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try payload.write(to: partURL)
+        }
+        let transport = FixtureModelDownloadTransport(payloads: [])
+        let manager = ModelDownloadManager(
+            directories: directories,
+            transport: transport,
+            tokenStore: StaticHuggingFaceTokenStore()
+        )
+
+        try await manager.restore()
+        try await manager.resume(id: id)
+        let completed = try await waitForState(
+            .completed,
+            id: id,
+            manager: manager
+        )
+
+        #expect(completed.files.allSatisfy { $0.isVerified })
+        #expect(await transport.transfers().isEmpty)
+        for file in files {
+            #expect(
+                FileManager.default.fileExists(
+                    atPath: directories.models
+                        .appending(
+                            path: completed.destinationRelativeDirectory
+                        )
+                        .appending(path: file.repositoryPath)
+                        .path
+                )
+            )
+        }
     }
 
     @Test("rejects an insecure resolved model URL")
@@ -667,11 +1136,16 @@ struct ModelDownloadManagerTests {
     }
 
     private func request(
+        source: ModelHubSource = .huggingFace,
         files: [ModelDownloadRequestFile]
     ) -> ModelDownloadRequest {
         ModelDownloadRequest(
+            source: source,
             reference: HuggingFaceRepositoryReference(
-                repositoryID: "owner/repo"
+                repositoryID: "owner/repo",
+                revision: source == .modelScope
+                    ? "master"
+                    : "main"
             ),
             displayName: "model-Q4_K_M",
             quantization: "Q4_K_M",
@@ -721,6 +1195,54 @@ struct ModelDownloadManagerTests {
             data.appendGGUFString(value)
         }
         data.appendGGUFString("weight")
+        data.appendLittleEndian(UInt32(1))
+        data.appendLittleEndian(UInt64(4))
+        data.appendLittleEndian(UInt32(0))
+        data.appendLittleEndian(UInt64(0))
+        let remainder = data.count % 32
+        if remainder != 0 {
+            data.append(
+                Data(repeating: 0, count: 32 - remainder)
+            )
+        }
+        data.append(Data(repeating: 0, count: 16))
+        return data
+    }
+
+    private func splitGGUF(
+        name: String,
+        index: UInt32,
+        count: UInt32,
+        includesModelMetadata: Bool
+    ) -> Data {
+        let stringEntries = includesModelMetadata
+            ? [
+                ("general.architecture", "llama"),
+                ("general.type", "model"),
+                ("general.name", name),
+            ]
+            : []
+        var data = Data("GGUF".utf8)
+        data.appendLittleEndian(UInt32(3))
+        data.appendLittleEndian(UInt64(1))
+        data.appendLittleEndian(
+            UInt64(stringEntries.count + 3)
+        )
+        for (key, value) in stringEntries {
+            data.appendGGUFString(key)
+            data.appendLittleEndian(UInt32(8))
+            data.appendGGUFString(value)
+        }
+        for (key, value) in [
+            ("split.no", index),
+            ("split.count", count),
+            ("split.tensors.count", count),
+        ] {
+            data.appendGGUFString(key)
+            data.appendLittleEndian(UInt32(4))
+            data.appendLittleEndian(value)
+        }
+        data.appendGGUFString("weight.\(index)")
         data.appendLittleEndian(UInt32(1))
         data.appendLittleEndian(UInt64(4))
         data.appendLittleEndian(UInt32(0))
@@ -858,6 +1380,20 @@ private struct StaticHuggingFaceFileURLResolver:
     }
 }
 
+private struct StaticModelScopeFileURLResolver:
+    ModelScopeFileURLResolving,
+    Sendable
+{
+    let url: URL
+
+    func resolveURL(
+        reference: HuggingFaceRepositoryReference,
+        filePath: String
+    ) throws -> URL {
+        url
+    }
+}
+
 private actor FixtureModelDownloadTransport:
     ModelDownloadTransporting
 {
@@ -909,6 +1445,82 @@ private actor FixtureModelDownloadTransport:
             etag: "\"fixture\"",
             resumedFromByte: transfer.existingByteCount,
             receivedBytes: Int64(payload.count)
+        )
+    }
+
+    func transfers() -> [ModelDownloadTransferRequest] {
+        recordedTransfers
+    }
+}
+
+private actor RangeFixtureModelDownloadTransport:
+    ModelDownloadTransporting
+{
+    private let payload: Data
+    private var failuresRemaining: Int
+    private let failureByteCount: Int
+    private var recordedTransfers: [
+        ModelDownloadTransferRequest
+    ] = []
+
+    init(
+        payload: Data,
+        failuresRemaining: Int = 0,
+        failureByteCount: Int = 0
+    ) {
+        self.payload = payload
+        self.failuresRemaining = failuresRemaining
+        self.failureByteCount = failureByteCount
+    }
+
+    func transfer(
+        _ transfer: ModelDownloadTransferRequest,
+        progress: @escaping @Sendable (Int64) -> Void
+    ) async throws -> ModelDownloadTransferResponse {
+        recordedTransfers.append(transfer)
+        let range = try #require(transfer.expectedRange)
+        transfer.metadataRecorder?.record(
+            ModelDownloadResponseMetadata(
+                etag: "\"fixture-etag\"",
+                repositoryCommit: "fixture-commit"
+            )
+        )
+
+        let start = Int(range.start)
+        let requestedEnd = Int(range.end) + 1
+        if failuresRemaining > 0 {
+            failuresRemaining -= 1
+            let end = min(
+                start + max(failureByteCount, 0),
+                requestedEnd
+            )
+            if end > start {
+                let partial = payload.subdata(in: start..<end)
+                try write(
+                    partial,
+                    to: transfer.destinationURL,
+                    append: range.start > 0
+                )
+                progress(Int64(end))
+            }
+            throw ModelDownloadTransportError.transport(
+                "fixture connection lost"
+            )
+        }
+
+        let chunk = payload.subdata(in: start..<requestedEnd)
+        try write(
+            chunk,
+            to: transfer.destinationURL,
+            append: range.start > 0
+        )
+        progress(Int64(requestedEnd))
+        return ModelDownloadTransferResponse(
+            statusCode: 206,
+            contentLength: Int64(chunk.count),
+            etag: "\"fixture-etag\"",
+            resumedFromByte: range.start,
+            receivedBytes: Int64(chunk.count)
         )
     }
 

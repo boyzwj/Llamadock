@@ -11,6 +11,7 @@ public enum ModelDownloadManagerError:
     case invalidState(UUID, ModelDownloadState)
     case destinationConflict(URL)
     case httpStatus(Int)
+    case retryLimitExceeded(attempts: Int, reason: String)
     case contentLengthMismatch(expected: Int64, actual: Int64)
     case fileSizeMismatch(
         path: String,
@@ -38,6 +39,8 @@ extension ModelDownloadManagerError: LocalizedError {
             "A model already exists at \(url.path). LlamaDock will not overwrite it."
         case .httpStatus(let status):
             "The model download returned HTTP \(status)."
+        case .retryLimitExceeded(let attempts, let reason):
+            "The model download still failed after \(attempts) automatic attempts. Partial progress was preserved. Last error: \(reason)"
         case .contentLengthMismatch(let expected, let actual):
             "The response expected \(expected) bytes but received \(actual)."
         case .fileSizeMismatch(let path, let expected, let actual):
@@ -50,14 +53,70 @@ extension ModelDownloadManagerError: LocalizedError {
     }
 }
 
+public struct ModelDownloadRetryPolicy:
+    Equatable,
+    Sendable
+{
+    public static let `default` = ModelDownloadRetryPolicy()
+
+    public let chunkSizeBytes: Int64
+    public let maximumAttemptsPerChunk: Int
+    public let baseDelayNanoseconds: UInt64
+    public let maximumDelayNanoseconds: UInt64
+
+    public init(
+        chunkSizeBytes: Int64 = 256 * 1_048_576,
+        maximumAttemptsPerChunk: Int = 8,
+        baseDelayNanoseconds: UInt64 = 1_000_000_000,
+        maximumDelayNanoseconds: UInt64 = 30_000_000_000
+    ) {
+        self.chunkSizeBytes = max(chunkSizeBytes, 1)
+        self.maximumAttemptsPerChunk = max(
+            maximumAttemptsPerChunk,
+            1
+        )
+        self.baseDelayNanoseconds = baseDelayNanoseconds
+        self.maximumDelayNanoseconds = max(
+            maximumDelayNanoseconds,
+            baseDelayNanoseconds
+        )
+    }
+
+    func delayNanoseconds(
+        beforeAttempt attempt: Int
+    ) -> UInt64 {
+        guard attempt > 1 else {
+            return 0
+        }
+        var delay = baseDelayNanoseconds
+        for _ in 2..<attempt {
+            let doubled = delay.multipliedReportingOverflow(
+                by: 2
+            )
+            delay = doubled.overflow
+                ? maximumDelayNanoseconds
+                : min(
+                    doubled.partialValue,
+                    maximumDelayNanoseconds
+                )
+        }
+        return min(delay, maximumDelayNanoseconds)
+    }
+}
+
 public actor ModelDownloadManager {
     private let directories: ApplicationDirectories
     private let store: any ModelDownloadStoring
     private let transport: any ModelDownloadTransporting
     private let urlResolver: any HuggingFaceFileURLResolving
+    private let modelScopeURLResolver:
+        any ModelScopeFileURLResolving
     private let tokenStore: any HuggingFaceTokenStoring
     private let metadataReader: GGUFMetadataReader
     private let fileManager: FileManager
+    private let retryPolicy: ModelDownloadRetryPolicy
+    private let retryDelay:
+        @Sendable (UInt64) async throws -> Void
 
     private var jobs: [UUID: ModelDownloadJob] = [:]
     private var orderedJobIDs: [UUID] = []
@@ -65,6 +124,7 @@ public actor ModelDownloadManager {
     private var activeTask: Task<Void, Never>?
     private var didRestore = false
     private var lastPersistedByteCounts: [String: Int64] = [:]
+    private var activeProgressGenerations: [String: UUID] = [:]
 
     public init(
         directories: ApplicationDirectories,
@@ -73,11 +133,18 @@ public actor ModelDownloadManager {
             URLSessionModelDownloadTransport(),
         urlResolver: any HuggingFaceFileURLResolving =
             HuggingFaceHubClient(),
+        modelScopeURLResolver:
+            any ModelScopeFileURLResolving =
+                ModelScopeHubClient(),
         tokenStore: any HuggingFaceTokenStoring =
             KeychainHuggingFaceTokenStore(),
         metadataReader: GGUFMetadataReader =
             GGUFMetadataReader(),
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        retryPolicy: ModelDownloadRetryPolicy = .default,
+        retryDelay: @escaping @Sendable (UInt64) async throws -> Void = {
+            try await Task.sleep(nanoseconds: $0)
+        }
     ) {
         self.directories = directories
         self.store = store ?? JSONModelDownloadStore(
@@ -85,9 +152,12 @@ public actor ModelDownloadManager {
         )
         self.transport = transport
         self.urlResolver = urlResolver
+        self.modelScopeURLResolver = modelScopeURLResolver
         self.tokenStore = tokenStore
         self.metadataReader = metadataReader
         self.fileManager = fileManager
+        self.retryPolicy = retryPolicy
+        self.retryDelay = retryDelay
     }
 
     public func restore() async throws {
@@ -155,6 +225,7 @@ public actor ModelDownloadManager {
 
         let job = ModelDownloadJob(
             id: id,
+            source: request.source,
             repositoryID: request.reference.repositoryID,
             revision: request.reference.revision,
             displayName: request.displayName,
@@ -244,6 +315,31 @@ public actor ModelDownloadManager {
             throw ModelDownloadManagerError
                 .destinationConflict(finalURL)
         }
+        for index in job.files.indices
+        where job.files[index].restartReason != nil {
+            let url = partURL(job: job, file: job.files[index])
+            let existingSize = try fileSizeIfPresent(at: url)
+            if
+                job.files[index].restartReason == "invalidGGUF",
+                existingSize == job.files[index].expectedSize
+            {
+                // Re-run structural verification before discarding a full,
+                // checksum-valid file. This also recovers downloads rejected
+                // by older builds that treated secondary GGUF splits as
+                // standalone models.
+                job.files[index].receivedBytes = existingSize
+                job.files[index].isVerified = false
+                job.files[index].restartReason = nil
+                continue
+            }
+            if fileManager.fileExists(atPath: url.path) {
+                try fileManager.removeItem(at: url)
+            }
+            job.files[index].receivedBytes = 0
+            job.files[index].etag = nil
+            job.files[index].isVerified = false
+            job.files[index].restartReason = nil
+        }
         job.state = .queued
         job.error = nil
         job.updatedAt = now
@@ -283,11 +379,18 @@ public actor ModelDownloadManager {
         id: UUID,
         now: Date = Date()
     ) async throws {
+        try await discard(id: id, now: now)
+    }
+
+    public func discard(
+        id: UUID,
+        now: Date = Date()
+    ) async throws {
         try await ensureRestored()
         guard var job = jobs[id] else {
             throw ModelDownloadManagerError.jobNotFound(id)
         }
-        guard job.state == .failed else {
+        guard [.failed, .cancelled].contains(job.state) else {
             throw ModelDownloadManagerError.invalidState(
                 id,
                 job.state
@@ -386,151 +489,20 @@ public actor ModelDownloadManager {
             guard let initialJob = jobs[id] else {
                 throw ModelDownloadManagerError.jobNotFound(id)
             }
-            let token = try tokenStore.token()
-            let reference = HuggingFaceRepositoryReference(
-                repositoryID: initialJob.repositoryID,
-                revision: initialJob.revision,
-                quantization: initialJob.quantization
-            )
-
+            let token: String?
+            switch initialJob.source {
+            case .huggingFace:
+                token = try tokenStore.token()
+            case .modelScope:
+                token = nil
+            }
             for fileID in initialJob.files.map(\.id) {
                 try Task.checkCancellation()
-                guard
-                    let job = jobs[id],
-                    let fileIndex = job.files.firstIndex(
-                        where: { $0.id == fileID }
-                    )
-                else {
-                    throw ModelDownloadManagerError
-                        .jobNotFound(id)
-                }
-                let partURL = partURL(
-                    job: job,
-                    file: job.files[fileIndex]
-                )
-                let file = job.files[fileIndex]
-                let existingSize = try fileSizeIfPresent(
-                    at: partURL
-                )
-                guard
-                    existingSize <= file.expectedSize
-                else {
-                    throw ModelDownloadManagerError
-                        .fileSizeMismatch(
-                            path: file.repositoryPath,
-                            expected: file.expectedSize,
-                            actual: existingSize
-                        )
-                }
-                updateFile(
+                try await downloadFile(
                     jobID: id,
-                    fileID: fileID
-                ) {
-                    $0.receivedBytes = existingSize
-                }
-                if
-                    existingSize
-                        == file.expectedSize
-                {
-                    continue
-                }
-
-                let url = try urlResolver.resolveURL(
-                    reference: reference,
-                    filePath: file.repositoryPath
+                    fileID: fileID,
+                    token: token
                 )
-                guard
-                    url.scheme?.lowercased() == "https",
-                    url.host != nil,
-                    url.user == nil,
-                    url.password == nil
-                else {
-                    throw ModelDownloadManagerError.invalidRequest(
-                        "Resolved model file URLs must use HTTPS without embedded credentials."
-                    )
-                }
-                var request = URLRequest(url: url)
-                request.httpMethod = "GET"
-                request.setValue(
-                    "application/octet-stream",
-                    forHTTPHeaderField: "Accept"
-                )
-                request.setValue(
-                    "identity",
-                    forHTTPHeaderField: "Accept-Encoding"
-                )
-                request.setValue(
-                    "LlamaDock",
-                    forHTTPHeaderField: "User-Agent"
-                )
-                if existingSize > 0 {
-                    request.setValue(
-                        "bytes=\(existingSize)-",
-                        forHTTPHeaderField: "Range"
-                    )
-                    if let etag = file.etag {
-                        request.setValue(
-                            etag,
-                            forHTTPHeaderField: "If-Range"
-                        )
-                    }
-                }
-                if let token, !token.isEmpty {
-                    request.setValue(
-                        "Bearer \(token)",
-                        forHTTPHeaderField: "Authorization"
-                    )
-                }
-
-                try await transition(id: id, to: .downloading)
-                let response = try await transport.transfer(
-                    ModelDownloadTransferRequest(
-                        request: request,
-                        destinationURL: partURL,
-                        existingByteCount: existingSize
-                    )
-                ) { [weak self] byteCount in
-                    Task {
-                        await self?.recordProgress(
-                            jobID: id,
-                            fileID: fileID,
-                            byteCount: byteCount
-                        )
-                    }
-                }
-                let actualSize: Int64
-                do {
-                    try validate(
-                        response: response,
-                        expectedFinalSize: file.expectedSize
-                    )
-                    actualSize = try fileSizeIfPresent(
-                        at: partURL
-                    )
-                    guard actualSize == file.expectedSize else {
-                        throw ModelDownloadManagerError
-                            .fileSizeMismatch(
-                                path: file.repositoryPath,
-                                expected: file.expectedSize,
-                                actual: actualSize
-                            )
-                    }
-                } catch {
-                    try? fileManager.removeItem(at: partURL)
-                    updateFile(
-                        jobID: id,
-                        fileID: fileID
-                    ) {
-                        $0.receivedBytes = 0
-                        $0.isVerified = false
-                    }
-                    throw error
-                }
-                updateFile(jobID: id, fileID: fileID) {
-                    $0.receivedBytes = actualSize
-                    $0.etag = response.etag ?? $0.etag
-                }
-                try await persist()
             }
 
             try Task.checkCancellation()
@@ -559,6 +531,431 @@ public actor ModelDownloadManager {
         activeTask = nil
         activeJobID = nil
         scheduleNext()
+    }
+
+    private func downloadFile(
+        jobID: UUID,
+        fileID: String,
+        token: String?
+    ) async throws {
+        guard
+            let initialJob = jobs[jobID],
+            let initialFile = initialJob.files.first(
+                where: { $0.id == fileID }
+            )
+        else {
+            throw ModelDownloadManagerError.jobNotFound(jobID)
+        }
+        let destinationURL = partURL(
+            job: initialJob,
+            file: initialFile
+        )
+        var existingSize = try fileSizeIfPresent(
+            at: destinationURL
+        )
+        guard existingSize <= initialFile.expectedSize else {
+            throw ModelDownloadManagerError.fileSizeMismatch(
+                path: initialFile.repositoryPath,
+                expected: initialFile.expectedSize,
+                actual: existingSize
+            )
+        }
+        updateFile(jobID: jobID, fileID: fileID) {
+            $0.receivedBytes = existingSize
+            $0.isVerified = false
+        }
+        try await persist()
+        guard existingSize < initialFile.expectedSize else {
+            return
+        }
+
+        if jobs[jobID]?.state != .downloading {
+            try await transition(
+                id: jobID,
+                to: .downloading
+            )
+        }
+
+        while existingSize < initialFile.expectedSize {
+            try Task.checkCancellation()
+            let remaining = initialFile.expectedSize
+                - existingSize
+            let chunkLength = min(
+                retryPolicy.chunkSizeBytes,
+                remaining
+            )
+            let chunkEnd = existingSize + chunkLength - 1
+            var attempt = 0
+
+            while existingSize <= chunkEnd {
+                try Task.checkCancellation()
+                attempt += 1
+                let attemptStart = existingSize
+                let recorder =
+                    ModelDownloadResponseMetadataRecorder()
+                var completedResponse = false
+                let progressGeneration = UUID()
+                activeProgressGenerations[fileID] =
+                    progressGeneration
+
+                do {
+                    guard
+                        let job = jobs[jobID],
+                        let file = job.files.first(
+                            where: { $0.id == fileID }
+                        )
+                    else {
+                        throw ModelDownloadManagerError
+                            .jobNotFound(jobID)
+                    }
+                    let byteRange = ModelDownloadByteRange(
+                        start: attemptStart,
+                        end: chunkEnd,
+                        total: file.expectedSize
+                    )
+                    let request = try makeTransferRequest(
+                        job: job,
+                        file: file,
+                        byteRange: byteRange,
+                        token: token,
+                        destinationURL: destinationURL,
+                        metadataRecorder: recorder
+                    )
+                    let response = try await transport.transfer(
+                        request
+                    ) { [weak self] byteCount in
+                        Task {
+                            await self?.recordProgress(
+                                jobID: jobID,
+                                fileID: fileID,
+                                byteCount: byteCount,
+                                generation: progressGeneration
+                            )
+                        }
+                    }
+                    if
+                        activeProgressGenerations[fileID]
+                            == progressGeneration
+                    {
+                        activeProgressGenerations[fileID] = nil
+                    }
+                    completedResponse = true
+                    try await applyResponseMetadata(
+                        recorder.snapshot(),
+                        fallbackETag: response.etag,
+                        jobID: jobID,
+                        fileID: fileID,
+                        existingByteCount: attemptStart
+                    )
+                    try validate(
+                        response: response,
+                        expectedRange: byteRange
+                    )
+                    let actualSize = try fileSizeIfPresent(
+                        at: destinationURL
+                    )
+                    guard
+                        actualSize == response.finalByteCount,
+                        actualSize > attemptStart,
+                        actualSize <= chunkEnd + 1
+                    else {
+                        throw ModelDownloadManagerError
+                            .fileSizeMismatch(
+                                path: file.repositoryPath,
+                                expected: chunkEnd + 1,
+                                actual: actualSize
+                            )
+                    }
+                    existingSize = actualSize
+                    updateFile(
+                        jobID: jobID,
+                        fileID: fileID
+                    ) {
+                        $0.receivedBytes = actualSize
+                        $0.isVerified = false
+                        $0.restartReason = nil
+                    }
+                    try await persist()
+                    attempt = 0
+                } catch {
+                    if
+                        activeProgressGenerations[fileID]
+                            == progressGeneration
+                    {
+                        activeProgressGenerations[fileID] = nil
+                    }
+                    var attemptError: any Error = error
+                    do {
+                        try await applyResponseMetadata(
+                            recorder.snapshot(),
+                            fallbackETag: nil,
+                            jobID: jobID,
+                            fileID: fileID,
+                            existingByteCount: attemptStart
+                        )
+                    } catch {
+                        attemptError = error
+                    }
+                    if attemptError is CancellationError {
+                        throw attemptError
+                    }
+                    if completedResponse {
+                        try truncateFile(
+                            at: destinationURL,
+                            to: attemptStart
+                        )
+                    }
+                    let actualSize = try fileSizeIfPresent(
+                        at: destinationURL
+                    )
+                    guard
+                        actualSize >= attemptStart,
+                        actualSize <= chunkEnd + 1
+                    else {
+                        try truncateFile(
+                            at: destinationURL,
+                            to: attemptStart
+                        )
+                        throw ModelDownloadManagerError
+                            .fileSizeMismatch(
+                                path: initialFile.repositoryPath,
+                                expected: chunkEnd + 1,
+                                actual: actualSize
+                            )
+                    }
+                    existingSize = actualSize
+                    let madeProgress = actualSize > attemptStart
+                    updateFile(
+                        jobID: jobID,
+                        fileID: fileID
+                    ) {
+                        $0.receivedBytes = actualSize
+                        $0.isVerified = false
+                    }
+                    try await persist()
+
+                    let retryable = isRetryable(attemptError)
+                    guard retryable else {
+                        throw attemptError
+                    }
+                    guard
+                        attempt
+                            < retryPolicy
+                                .maximumAttemptsPerChunk
+                    else {
+                        throw ModelDownloadManagerError
+                            .retryLimitExceeded(
+                                attempts: attempt,
+                                reason: diagnosticDescription(
+                                    attemptError
+                                )
+                            )
+                    }
+                    let delay = retryPolicy.delayNanoseconds(
+                        beforeAttempt: attempt + 1
+                    )
+                    if delay > 0 {
+                        try await retryDelay(delay)
+                    }
+                    if madeProgress {
+                        attempt = 0
+                    }
+                }
+            }
+        }
+    }
+
+    private func makeTransferRequest(
+        job: ModelDownloadJob,
+        file: ModelDownloadFile,
+        byteRange: ModelDownloadByteRange,
+        token: String?,
+        destinationURL: URL,
+        metadataRecorder:
+            ModelDownloadResponseMetadataRecorder
+    ) throws -> ModelDownloadTransferRequest {
+        let reference = HuggingFaceRepositoryReference(
+            repositoryID: job.repositoryID,
+            revision: job.resolvedRevision ?? job.revision,
+            quantization: job.quantization
+        )
+        let url: URL
+        switch job.source {
+        case .huggingFace:
+            url = try urlResolver.resolveURL(
+                reference: reference,
+                filePath: file.repositoryPath
+            )
+        case .modelScope:
+            url = try modelScopeURLResolver.resolveURL(
+                reference: reference,
+                filePath: file.repositoryPath
+            )
+        }
+        guard
+            url.scheme?.lowercased() == "https",
+            url.host != nil,
+            url.user == nil,
+            url.password == nil
+        else {
+            throw ModelDownloadManagerError.invalidRequest(
+                "Resolved model file URLs must use HTTPS without embedded credentials."
+            )
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue(
+            "application/octet-stream",
+            forHTTPHeaderField: "Accept"
+        )
+        request.setValue(
+            "identity",
+            forHTTPHeaderField: "Accept-Encoding"
+        )
+        request.setValue(
+            "LlamaDock",
+            forHTTPHeaderField: "User-Agent"
+        )
+        request.setValue(
+            "bytes=\(byteRange.start)-\(byteRange.end)",
+            forHTTPHeaderField: "Range"
+        )
+        if
+            byteRange.start > 0,
+            let etag = file.etag
+        {
+            request.setValue(
+                etag,
+                forHTTPHeaderField: "If-Range"
+            )
+        }
+        if let token, !token.isEmpty {
+            request.setValue(
+                "Bearer \(token)",
+                forHTTPHeaderField: "Authorization"
+            )
+        }
+
+        return ModelDownloadTransferRequest(
+            request: request,
+            destinationURL: destinationURL,
+            existingByteCount: byteRange.start,
+            expectedRange: byteRange,
+            expectedETag: byteRange.start > 0
+                ? file.etag
+                : nil,
+            expectedRepositoryCommit: job.resolvedRevision,
+            metadataRecorder: metadataRecorder
+        )
+    }
+
+    private func applyResponseMetadata(
+        _ metadata: ModelDownloadResponseMetadata,
+        fallbackETag: String?,
+        jobID: UUID,
+        fileID: String,
+        existingByteCount: Int64
+    ) async throws {
+        guard
+            var job = jobs[jobID],
+            let fileIndex = job.files.firstIndex(
+                where: { $0.id == fileID }
+            )
+        else {
+            throw ModelDownloadManagerError.jobNotFound(jobID)
+        }
+        var didChange = false
+        if
+            job.source == .huggingFace,
+            let commit = metadata.repositoryCommit
+        {
+            if
+                let existing = job.resolvedRevision,
+                existing != commit
+            {
+                throw ModelDownloadTransportError
+                    .repositoryCommitMismatch(
+                        expected: existing,
+                        actual: commit
+                    )
+            }
+            if job.resolvedRevision == nil {
+                job.resolvedRevision = commit
+                didChange = true
+            }
+        }
+        if let etag = metadata.etag ?? fallbackETag {
+            if
+                existingByteCount > 0,
+                let existing = job.files[fileIndex].etag,
+                existing != etag
+            {
+                throw ModelDownloadTransportError
+                    .entityTagMismatch(
+                        expected: existing,
+                        actual: etag
+                    )
+            }
+            if job.files[fileIndex].etag != etag {
+                job.files[fileIndex].etag = etag
+                didChange = true
+            }
+        }
+        if didChange {
+            job.updatedAt = Date()
+            jobs[jobID] = job
+            try await persist()
+        }
+    }
+
+    private func isRetryable(
+        _ error: any Error
+    ) -> Bool {
+        if error is CancellationError {
+            return false
+        }
+        if let error = error as? ModelDownloadTransportError {
+            switch error {
+            case
+                .transport,
+                .nonHTTPResponse,
+                .invalidContentRange,
+                .rangeNotHonored:
+                return true
+            case
+                .invalidDestination,
+                .existingFileSizeMismatch,
+                .entityTagMismatch,
+                .repositoryCommitMismatch,
+                .insecureRedirect,
+                .fileWrite:
+                return false
+            }
+        }
+        if
+            case .httpStatus(let status) =
+                error as? ModelDownloadManagerError
+        {
+            return [408, 425, 429, 500, 502, 503, 504]
+                .contains(status)
+        }
+        return false
+    }
+
+    private func truncateFile(
+        at url: URL,
+        to byteCount: Int64
+    ) throws {
+        guard byteCount >= 0 else {
+            throw ModelDownloadManagerError.invalidRequest(
+                "A partial model file cannot have a negative size."
+            )
+        }
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.truncate(atOffset: UInt64(byteCount))
+        try handle.synchronize()
     }
 
     private func transition(
@@ -596,11 +993,13 @@ public actor ModelDownloadManager {
     private func recordProgress(
         jobID: UUID,
         fileID: String,
-        byteCount: Int64
+        byteCount: Int64,
+        generation: UUID
     ) async {
         guard
             var job = jobs[jobID],
             job.state == .downloading,
+            activeProgressGenerations[fileID] == generation,
             let index = job.files.firstIndex(
                 where: { $0.id == fileID }
             )
@@ -611,16 +1010,22 @@ public actor ModelDownloadManager {
             max(byteCount, 0),
             job.files[index].expectedSize
         )
-        job.files[index].receivedBytes = bounded
+        let monotonic = max(
+            bounded,
+            job.files[index].receivedBytes
+        )
+        job.files[index].receivedBytes = monotonic
         job.updatedAt = Date()
         jobs[jobID] = job
 
-        let persisted = lastPersistedByteCounts[fileID] ?? 0
+        let persistenceKey = "\(jobID.uuidString):\(fileID)"
+        let persisted = lastPersistedByteCounts[persistenceKey]
+            ?? 0
         if
-            bounded == job.files[index].expectedSize
-                || bounded - persisted >= 16 * 1_048_576
+            monotonic == job.files[index].expectedSize
+                || monotonic - persisted >= 16 * 1_048_576
         {
-            lastPersistedByteCounts[fileID] = bounded
+            lastPersistedByteCounts[persistenceKey] = monotonic
             try? await persist()
         }
     }
@@ -631,6 +1036,10 @@ public actor ModelDownloadManager {
         guard let job = jobs[jobID] else {
             throw ModelDownloadManagerError.jobNotFound(jobID)
         }
+
+        // Verify transport integrity for every file before interpreting the
+        // GGUF shard set. A split may keep model-level metadata only in its
+        // first file, but every file still has an independent size/hash.
         for file in job.files {
             let url = partURL(job: job, file: file)
             let actualSize = try fileSizeIfPresent(at: url)
@@ -647,13 +1056,13 @@ public actor ModelDownloadManager {
                     actual.caseInsensitiveCompare(expected)
                         == .orderedSame
                 else {
-                    try? fileManager.removeItem(at: url)
                     updateFile(
                         jobID: jobID,
                         fileID: file.id
                     ) {
-                        $0.receivedBytes = 0
+                        $0.receivedBytes = file.expectedSize
                         $0.isVerified = false
+                        $0.restartReason = "checksumMismatch"
                     }
                     throw ModelDownloadManagerError
                         .checksumMismatch(
@@ -663,28 +1072,135 @@ public actor ModelDownloadManager {
                         )
                 }
             }
-            do {
-                _ = try metadataReader.read(from: url)
-            } catch {
-                try? fileManager.removeItem(at: url)
-                updateFile(
-                    jobID: jobID,
-                    fileID: file.id
-                ) {
-                    $0.receivedBytes = 0
+        }
+
+        var seenArtifactIDs = Set<String>()
+        let artifactIDs = job.files.compactMap { file in
+            seenArtifactIDs.insert(file.artifactID).inserted
+                ? file.artifactID
+                : nil
+        }
+        for artifactID in artifactIDs {
+            let files = job.files.filter {
+                $0.artifactID == artifactID
+            }.sorted {
+                $0.repositoryPath.localizedStandardCompare(
+                    $1.repositoryPath
+                ) == .orderedAscending
+            }
+            var parsed: [(ModelDownloadFile, GGUFMetadata)] = []
+            var primaryMetadata: GGUFMetadata?
+
+            for file in files {
+                let url = partURL(job: job, file: file)
+                do {
+                    let metadata: GGUFMetadata
+                    if let primaryMetadata {
+                        metadata = try metadataReader.readSplitShard(
+                            from: url,
+                            inheritingArchitecture:
+                                primaryMetadata.architecture
+                        )
+                    } else {
+                        metadata = try metadataReader.read(from: url)
+                        primaryMetadata = metadata
+                    }
+                    parsed.append((file, metadata))
+                } catch {
+                    updateFile(
+                        jobID: jobID,
+                        fileID: file.id
+                    ) {
+                        $0.receivedBytes = file.expectedSize
+                        $0.isVerified = false
+                        $0.restartReason = "invalidGGUF"
+                    }
+                    throw ModelDownloadManagerError.invalidGGUF(
+                        path: file.repositoryPath,
+                        reason: diagnosticDescription(error)
+                    )
+                }
+            }
+
+            if let failure = splitValidationFailure(parsed) {
+                guard let file = files.first else {
+                    continue
+                }
+                updateFile(jobID: jobID, fileID: file.id) {
+                    $0.receivedBytes = file.expectedSize
                     $0.isVerified = false
+                    $0.restartReason = "invalidGGUF"
                 }
                 throw ModelDownloadManagerError.invalidGGUF(
                     path: file.repositoryPath,
-                    reason: diagnosticDescription(error)
+                    reason: failure
                 )
             }
-            updateFile(jobID: jobID, fileID: file.id) {
-                $0.receivedBytes = file.expectedSize
-                $0.isVerified = true
+
+            for file in files {
+                updateFile(jobID: jobID, fileID: file.id) {
+                    $0.receivedBytes = file.expectedSize
+                    $0.isVerified = true
+                    $0.restartReason = nil
+                }
             }
             try await persist()
         }
+    }
+
+    private func splitValidationFailure(
+        _ files: [(file: ModelDownloadFile, metadata: GGUFMetadata)]
+    ) -> String? {
+        guard let primary = files.first?.metadata else {
+            return "The GGUF artifact contains no files."
+        }
+        guard let primaryShard = primary.shard else {
+            if files.dropFirst().contains(where: {
+                $0.metadata.shard != nil
+            }) {
+                return "The GGUF split is missing its primary shard metadata."
+            }
+            return nil
+        }
+
+        guard
+            primaryShard.zeroBasedIndex == 0,
+            primaryShard.count == UInt64(files.count)
+        else {
+            return "The GGUF split count does not match the downloaded shard set."
+        }
+        let shards = files.compactMap { $0.metadata.shard }
+        guard shards.count == files.count else {
+            return "One or more GGUF files are missing split metadata."
+        }
+        guard shards.allSatisfy({
+            $0.count == primaryShard.count
+        }) else {
+            return "The GGUF files disagree about the split count."
+        }
+        guard
+            Set(shards.map(\.zeroBasedIndex))
+                == Set(0..<primaryShard.count)
+        else {
+            return "The GGUF split has a duplicate or missing shard index."
+        }
+        guard files.allSatisfy({
+            $0.metadata.architecture == primary.architecture
+        }) else {
+            return "The GGUF files disagree about the model architecture."
+        }
+        if let totalTensorCount = primaryShard.totalTensorCount {
+            let sum = files.map { $0.metadata.tensorCount }.reduce(
+                UInt64(0)
+            ) { partial, count in
+                let result = partial.addingReportingOverflow(count)
+                return result.overflow ? UInt64.max : result.partialValue
+            }
+            guard sum == totalTensorCount else {
+                return "The GGUF split tensor count does not match its metadata."
+            }
+        }
+        return nil
     }
 
     private func importDownloadedFiles(
@@ -868,11 +1384,13 @@ public actor ModelDownloadManager {
 
     private func validate(
         response: ModelDownloadTransferResponse,
-        expectedFinalSize: Int64
+        expectedRange: ModelDownloadByteRange
     ) throws {
-        guard response.statusCode == 200
-            || response.statusCode == 206
-        else {
+        let acceptsFullResponse =
+            expectedRange.start == 0
+                && expectedRange.end == expectedRange.total - 1
+                && response.statusCode == 200
+        guard response.statusCode == 206 || acceptsFullResponse else {
             throw ModelDownloadManagerError.httpStatus(
                 response.statusCode
             )
@@ -886,10 +1404,21 @@ public actor ModelDownloadManager {
                     )
             }
         }
-        guard response.finalByteCount == expectedFinalSize else {
+        guard response.resumedFromByte == expectedRange.start else {
             throw ModelDownloadManagerError
                 .contentLengthMismatch(
-                    expected: expectedFinalSize,
+                    expected: expectedRange.start,
+                    actual: response.resumedFromByte
+                )
+        }
+        let maximumFinalSize = expectedRange.end + 1
+        guard
+            response.finalByteCount > expectedRange.start,
+            response.finalByteCount <= maximumFinalSize
+        else {
+            throw ModelDownloadManagerError
+                .contentLengthMismatch(
+                    expected: maximumFinalSize,
                     actual: response.finalByteCount
                 )
         }
@@ -912,7 +1441,7 @@ public actor ModelDownloadManager {
             disambiguator: artifactSeed
         )
         return [
-            "huggingface",
+            request.source.storageDirectoryComponent,
             repository[0],
             repository[1],
             revision,

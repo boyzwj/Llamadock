@@ -4,7 +4,6 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.locale) private var locale
-    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         @Bindable var appModel = appModel
@@ -74,16 +73,20 @@ struct ContentView: View {
         switch appModel.selectedSection {
         case .overview:
             OverviewView()
-        case .service:
-            ServersView()
         case .logs:
             LogsView()
+        case .benchmark:
+            BenchmarkView()
         case .runtimes:
             RuntimesView()
         case .models:
             ModelsView()
         case .downloads:
             DownloadsView()
+        case .settings:
+            ControlPlaneSettingsView()
+        case .about:
+            AboutView()
         case nil:
             ContentUnavailableView(
                 "Choose a Section",
@@ -94,23 +97,14 @@ struct ContentView: View {
     }
 
     private var sidebarFooter: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             Divider()
-            HStack {
-                StatusBadge(
-                    title: appModel.serviceStatus.localizedTitle,
-                    systemImage: appModel.serviceStatus.systemImage,
-                    tone: appModel.serviceStatus.tone
-                )
-                Spacer()
-                Button {
-                    openSettings()
-                } label: {
-                    Label("Settings…", systemImage: "gear")
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(",", modifiers: [.command])
-            }
+            StatusBadge(
+                title: appModel.serviceStatus.localizedTitle,
+                systemImage: appModel.serviceStatus.systemImage,
+                tone: appModel.serviceStatus.tone
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
         }
