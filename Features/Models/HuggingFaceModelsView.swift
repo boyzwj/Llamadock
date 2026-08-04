@@ -15,8 +15,11 @@ struct ModelHubModelsView: View {
 
             if
                 appModel.huggingFaceRepositories.isEmpty,
-                !appModel.isSearchingHuggingFace
+                appModel.isSearchingHuggingFace
             {
+                ProgressView("Loading popular GGUF models…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if appModel.huggingFaceRepositories.isEmpty {
                 initialState
             } else {
                 HSplitView {
@@ -36,11 +39,18 @@ struct ModelHubModelsView: View {
         }
         .onAppear {
             appModel.activateModelHub(source)
+            if appModel.huggingFaceRepositories.isEmpty {
+                query = "GGUF"
+                search()
+            }
         }
     }
 
     private var searchBar: some View {
         VStack(alignment: .leading, spacing: 7) {
+            Text(localized("Add Model from \(sourceTitle)"))
+                .font(.headline)
+
             HStack(spacing: 8) {
                 TextField(
                     source == .huggingFace
@@ -121,10 +131,8 @@ struct ModelHubModelsView: View {
                     : "Search public GGUF repositories on ModelScope or paste a modelscope.cn repository URL."
             )
         } actions: {
-            Button("Try a Small Test Repository") {
-                query = source == .huggingFace
-                    ? "stories15M GGUF"
-                    : "Qwen GGUF"
+            Button("Load Popular GGUF Models") {
+                query = "GGUF"
                 search()
             }
             .buttonStyle(.borderedProminent)
@@ -135,11 +143,19 @@ struct ModelHubModelsView: View {
     private var repositoryList: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(
-                    "\(appModel.huggingFaceRepositories.count) repositories"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(
+                        query == "GGUF"
+                            ? "Suggested Models"
+                            : "Search Results"
+                    )
+                    .font(.headline)
+                    Text(
+                        "\(appModel.huggingFaceRepositories.count) repositories"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -204,17 +220,6 @@ struct ModelHubModelsView: View {
 
                     if let catalog = appModel.huggingFaceCatalog {
                         artifactCatalog(catalog)
-                    }
-
-                    if !appModel.modelDownloadSnapshot.jobs.isEmpty {
-                        Button {
-                            appModel.selectedSection = .downloads
-                        } label: {
-                            Label(
-                                "Open Download Queue",
-                                systemImage: "arrow.down.circle"
-                            )
-                        }
                     }
                 }
                 .padding(22)

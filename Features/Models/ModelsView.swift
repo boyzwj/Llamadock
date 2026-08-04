@@ -8,7 +8,6 @@ struct ModelsView: View {
     @Environment(\.locale) private var locale
     @State private var searchText = ""
     @State private var validationFilter = ModelValidationFilter.all
-    @State private var source = ModelSource.local
     @State private var modelSettingsSearchText = ""
     @State private var profileEditorLevel =
         ProfileEditorLevel.basic
@@ -34,7 +33,7 @@ struct ModelsView: View {
         )
         .toolbar {
             ToolbarItemGroup {
-                if mode == .browser, source == .local {
+                if mode == .browser {
                     Button("Add Folder", systemImage: "folder.badge.plus") {
                         chooseDirectories()
                     }
@@ -66,6 +65,13 @@ struct ModelsView: View {
                             appModel.localModelTrashBlockReason(
                                 model
                             ) != nil
+                        )
+                        .help(
+                            appModel.localModelTrashBlockReason(
+                                model
+                            ) ?? localized(
+                                "Move this GGUF file to the system Trash."
+                            )
                         )
                     }
                 }
@@ -139,41 +145,18 @@ struct ModelsView: View {
                     Text("Models")
                         .font(.largeTitle.bold())
                     Text(
-                        "Local GGUF library, Hugging Face, and ModelScope"
+                        "\(appModel.localModels.count) local model files • \(byteCount(appModel.localModelByteCount))"
                     )
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
-
-                Picker("Model Source", selection: $source) {
-                    ForEach(ModelSource.allCases) { source in
-                        Label(
-                            source.localizedTitle(locale: locale),
-                            systemImage: source.icon
-                        )
-                            .tag(source)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 420)
             }
             .padding(.horizontal, LlamaDockLayout.pagePadding)
             .padding(.vertical, 14)
 
             Divider()
-
-            switch source {
-            case .local:
-                localLibrary
-            case .huggingFace:
-                ModelHubModelsView(source: .huggingFace)
-                    .id(ModelHubSource.huggingFace)
-            case .modelScope:
-                ModelHubModelsView(source: .modelScope)
-                    .id(ModelHubSource.modelScope)
-            }
+            localLibrary
         }
     }
 
@@ -2252,42 +2235,6 @@ private struct ModelStatusBadge: View {
 
     private var color: Color {
         model.validation == .valid ? .green : .orange
-    }
-}
-
-private enum ModelSource:
-    String,
-    CaseIterable,
-    Identifiable
-{
-    case local
-    case huggingFace
-    case modelScope
-
-    var id: String {
-        rawValue
-    }
-
-    func localizedTitle(locale: Locale) -> String {
-        switch self {
-        case .local:
-            appLocalizedString("Local Library", locale: locale)
-        case .huggingFace:
-            appLocalizedString("Hugging Face", locale: locale)
-        case .modelScope:
-            appLocalizedString("ModelScope", locale: locale)
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .local:
-            "internaldrive"
-        case .huggingFace:
-            "globe"
-        case .modelScope:
-            "network"
-        }
     }
 }
 

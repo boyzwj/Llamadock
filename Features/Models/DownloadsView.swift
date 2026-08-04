@@ -5,17 +5,181 @@ import SwiftUI
 struct DownloadsView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.locale) private var locale
+    @State private var isShowingQueue = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal, LlamaDockLayout.pagePadding)
+                .padding(.vertical, 14)
+
+            Divider()
+
+            downloadActivity
+                .padding(.horizontal, LlamaDockLayout.pagePadding)
+                .padding(.vertical, 12)
+
+            Divider()
+
+            ModelHubModelsView(source: appModel.activeModelHubSource)
+                .id(appModel.activeModelHubSource)
+        }
+        .navigationTitle("Downloads")
+        .sheet(isPresented: $isShowingQueue) {
+            ModelDownloadQueueView {
+                isShowingQueue = false
+            }
+            .frame(minWidth: 760, minHeight: 560)
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 20) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Downloads")
+                    .font(.largeTitle.bold())
+                Text("Browse, download, and track GGUF models")
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 16)
+
+            Picker(
+                "Model Source",
+                selection: Binding(
+                    get: { appModel.activeModelHubSource },
+                    set: { appModel.activateModelHub($0) }
+                )
+            ) {
+                ForEach(ModelHubSource.allCases, id: \.self) { source in
+                    Text(source.localizedTitle(locale: locale))
+                        .tag(source)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(width: 300)
+            .disabled(
+                appModel.isSearchingHuggingFace
+                    || appModel.isLoadingHuggingFaceRepository
+            )
+        }
+    }
+
+    private var downloadActivity: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.title2)
+                .foregroundStyle(
+                    activeJobs.isEmpty ? Color.secondary : Color.accentColor
+                )
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Active Downloads")
+                    .font(.headline)
+                Text(activityDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 16)
+
+            if activeExpectedBytes > 0 {
+                VStack(alignment: .trailing, spacing: 4) {
+                    ProgressView(value: activeProgress)
+                        .frame(width: 170)
+                    Text(
+                        "\(formattedBytes(activeReceivedBytes)) of \(formattedBytes(activeExpectedBytes))"
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Total download progress")
+                .accessibilityValue(
+                    "\(Int(activeProgress * 100)) percent"
+                )
+            }
+
+            Button("Open Download Queue", systemImage: "list.bullet") {
+                isShowingQueue = true
+            }
+            .disabled(appModel.modelDownloadSnapshot.jobs.isEmpty)
+        }
+    }
+
+    private var activeJobs: [ModelDownloadJob] {
+        appModel.modelDownloadSnapshot.jobs.filter {
+            !$0.state.isTerminal
+        }
+    }
+
+    private var activityDescription: String {
+        let total = appModel.modelDownloadSnapshot.jobs.count
+        guard total > 0 else {
+            return localized("No active tasks")
+        }
+        return localized(
+            "\(activeJobs.count) active downloads • \(total) total"
+        )
+    }
+
+    private var activeExpectedBytes: Int64 {
+        saturatingSum(activeJobs.map(\.expectedBytes))
+    }
+
+    private var activeReceivedBytes: Int64 {
+        saturatingSum(activeJobs.map(\.receivedBytes))
+    }
+
+    private var activeProgress: Double {
+        guard activeExpectedBytes > 0 else {
+            return 0
+        }
+        return min(
+            max(
+                Double(activeReceivedBytes) / Double(activeExpectedBytes),
+                0
+            ),
+            1
+        )
+    }
+
+    private func formattedBytes(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: max(bytes, 0))
+    }
+
+    private func saturatingSum(_ values: [Int64]) -> Int64 {
+        values.reduce(0) { partial, value in
+            let result = partial.addingReportingOverflow(max(value, 0))
+            return result.overflow ? Int64.max : result.partialValue
+        }
+    }
+
+    private func localized(
+        _ value: String.LocalizationValue
+    ) -> String {
+        appLocalizedString(value, locale: locale)
+    }
+}
+
+private struct ModelDownloadQueueView: View {
+    @Environment(AppModel.self) private var appModel
+    @Environment(\.locale) private var locale
+
+    let close: () -> Void
 
     var body: some View {
         LlamaDockPage {
             LlamaDockPageHeader(
-                "Downloads",
+                "Download Queue",
                 subtitle:
                     "Hugging Face and ModelScope download queue"
             ) {
-                Button("Browse Models", systemImage: "magnifyingglass") {
-                    appModel.selectedSection = .models
-                }
+                Button("Close", systemImage: "xmark", action: close)
             }
 
             if let error = appModel.modelDownloadError {
@@ -31,10 +195,9 @@ struct DownloadsView: View {
                     description:
                         "Browse an online model source, choose a complete GGUF artifact, and add it to this queue.",
                     systemImage: "arrow.down.circle",
-                    actionTitle: "Browse Models"
-                ) {
-                    appModel.selectedSection = .models
-                }
+                    actionTitle: "Close",
+                    action: close
+                )
             } else {
                 queueSummary
 
@@ -84,7 +247,6 @@ struct DownloadsView: View {
                 }
             }
         }
-        .navigationTitle("Downloads")
     }
 
     private var queueSummary: some View {
