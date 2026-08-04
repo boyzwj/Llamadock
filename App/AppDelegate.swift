@@ -1,9 +1,11 @@
 import AppKit
+import Darwin
 import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var shutdownOwnedServer: (() async -> Void)?
+    private var singleInstanceLockDescriptor: Int32 = -1
     private var isShuttingDown = false
     private var wasMainWindowRequested = false
     private var mainWindowController: NSWindowController?
@@ -11,6 +13,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(
         _ notification: Notification
     ) {
+        guard acquireSingleInstanceLock() else {
+            activateExistingInstance()
+            NSApp.terminate(nil)
+            return
+        }
+
         setAccessoryActivationPolicy()
         let center = NotificationCenter.default
         center.addObserver(
@@ -140,6 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ notification: Notification
     ) {
         NotificationCenter.default.removeObserver(self)
+        releaseSingleInstanceLock()
     }
 
     @objc
@@ -197,6 +206,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var mainWindow: NSWindow? {
         mainWindowController?.window
+    }
+
+    private func acquireSingleInstanceLock() -> Bool {
+        let descriptor = open(
+            "/tmp/io.github.boyzwj.LlamaDock.lock",
+            O_CREAT | O_RDONLY | O_CLOEXEC,
+            S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH
+        )
+        guard descriptor >= 0 else {
+            return false
+        }
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            close(descriptor)
+            return false
+        }
+
+        singleInstanceLockDescriptor = descriptor
+        return true
+    }
+
+    private func releaseSingleInstanceLock() {
+        guard singleInstanceLockDescriptor >= 0 else {
+            return
+        }
+        flock(singleInstanceLockDescriptor, LOCK_UN)
+        close(singleInstanceLockDescriptor)
+        singleInstanceLockDescriptor = -1
+    }
+
+    private func activateExistingInstance() {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            return
+        }
+        let currentProcessIdentifier = ProcessInfo.processInfo.processIdentifier
+        let existingInstance = NSRunningApplication
+            .runningApplications(withBundleIdentifier: bundleIdentifier)
+            .first { application in
+                application.processIdentifier != currentProcessIdentifier
+            }
+        existingInstance?.activate(
+            options: [.activateAllWindows]
+        )
     }
 
     private func hideUnrequestedWindows() {

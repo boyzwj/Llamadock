@@ -21,9 +21,9 @@ struct LogsView: View {
                     description:
                         "stdout and stderr from the owned llama-server process will appear here.",
                     systemImage: "text.alignleft",
-                    actionTitle: "Open Service"
+                    actionTitle: "Open Dashboard"
                 ) {
-                    appModel.selectedSection = .service
+                    appModel.selectedSection = .overview
                 }
             } else if filteredLogs.isEmpty {
                 ContentUnavailableView(

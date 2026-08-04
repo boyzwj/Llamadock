@@ -9,8 +9,17 @@ final class AppModel {
         "serviceNetwork.host"
     private static let servicePortDefaultsKey =
         "serviceNetwork.port"
+    private static let maximumLoadedModelsDefaultsKey =
+        "serviceRouter.maximumLoadedModels"
+    private static let modelsAutoloadDefaultsKey =
+        "serviceRouter.modelsAutoload"
+    private static let selectedRuntimeDefaultsKey =
+        "serviceRouter.runtimeID"
+    private static let globalModelOptionsDefaultsKey =
+        "modelDefaults.v1"
 
     var selectedSection: AppSection? = .overview
+    var selectedSettingsTab = ControlPlaneSettingsTab.global
     var runtimeReports: [RuntimeProbeReport] = []
     var runtimes: [RuntimeInstallation] = []
     var selectedRuntimeID: String?
@@ -52,6 +61,9 @@ final class AppModel {
     var selectedProfileID: UUID?
     var serviceHost: String
     var servicePort: UInt16
+    var maximumLoadedModels: Int
+    var modelsAutoload: Bool
+    var globalModelOptions: GlobalModelOptions
     var profile: LaunchProfile? {
         get {
             guard let selectedProfileID else {
@@ -78,6 +90,8 @@ final class AppModel {
     }
     var commandPreview: String?
     var commandError: String?
+    var modelsPresetPreview: String?
+    var serverModels: [LlamaServerModel] = []
     var serverSnapshot = ServerSnapshot(
         state: .stopped,
         run: nil,
@@ -120,6 +134,7 @@ final class AppModel {
     private let modelDownloadProfileFactory:
         ModelDownloadProfileFactory
     private let serverController: ServerProcessController
+    private let serverModelsAdapter: LlamaServerModelsAdapter
     private let userDefaults: UserDefaults
     private var didBootstrap = false
     private var serverMonitorTask: Task<Void, Never>?
@@ -134,11 +149,14 @@ final class AppModel {
     private var observedCompletedDownloadIDs: Set<UUID> = []
     private var shouldMigrateServiceHostFromProfile: Bool
     private var shouldMigrateServicePortFromProfile: Bool
+    private var lastServerModelsRefreshAt: Date?
 
     init(
         runtimeDiscovery: RuntimeCandidateDiscovery = RuntimeCandidateDiscovery(),
         runtimeProbe: RuntimeProbe = RuntimeProbe(timeoutSeconds: 5),
-        serverController: ServerProcessController = ServerProcessController(),
+        serverController: ServerProcessController? = nil,
+        serverModelsAdapter: LlamaServerModelsAdapter =
+            LlamaServerModelsAdapter(),
         userDefaults: UserDefaults = .standard,
         applicationDirectories: ApplicationDirectories? = nil,
         managedRuntimeRegistry: (
@@ -177,7 +195,7 @@ final class AppModel {
     ) {
         self.runtimeDiscovery = runtimeDiscovery
         self.runtimeProbe = runtimeProbe
-        self.serverController = serverController
+        self.serverModelsAdapter = serverModelsAdapter
         self.userDefaults = userDefaults
         let persistedHost = userDefaults.string(
             forKey: Self.serviceHostDefaultsKey
@@ -203,6 +221,33 @@ final class AppModel {
             servicePort = ServerOptions.defaultPort
             shouldMigrateServicePortFromProfile = true
         }
+        maximumLoadedModels = (
+            userDefaults.object(
+                forKey: Self.maximumLoadedModelsDefaultsKey
+            ) as? NSNumber
+        ).map {
+            min(max($0.intValue, 0), 64)
+        } ?? 4
+        modelsAutoload = userDefaults.object(
+            forKey: Self.modelsAutoloadDefaultsKey
+        ) as? Bool ?? true
+        if
+            let data = userDefaults.data(
+                forKey: Self.globalModelOptionsDefaultsKey
+            ),
+            var persistedOptions = try? JSONDecoder().decode(
+                GlobalModelOptions.self,
+                from: data
+            )
+        {
+            persistedOptions.normalize()
+            globalModelOptions = persistedOptions
+        } else {
+            globalModelOptions = GlobalModelOptions()
+        }
+        selectedRuntimeID = userDefaults.string(
+            forKey: Self.selectedRuntimeDefaultsKey
+        )
 
         let directories: ApplicationDirectories
         if let applicationDirectories {
@@ -220,6 +265,12 @@ final class AppModel {
             )
         }
         self.applicationDirectories = directories
+        self.serverController = serverController
+            ?? ServerProcessController(
+                ownershipStore: JSONServerOwnershipStore(
+                    fileURL: directories.serverOwnership
+                )
+            )
         self.modelDirectoryStore = modelDirectoryStore
             ?? JSONModelDirectoryStore(
                 fileURL: directories.settings
@@ -306,6 +357,15 @@ final class AppModel {
         defer { isBootstrapping = false }
 
         refreshHuggingFaceTokenState()
+        let ownershipRecovery = await serverController
+            .recoverOrphanedServer()
+        if case .failed(let reason) = ownershipRecovery {
+            let message = localized(
+                "Could not recover the previous llama-server process."
+            ) + " " + reason
+            serverFailureMessage = message
+            visibleError = message
+        }
         do {
             try await modelDownloadManager.restore()
             modelDownloadSnapshot = await modelDownloadManager
@@ -322,10 +382,11 @@ final class AppModel {
                 \(error.localizedDescription)
                 """)
         }
-        await refreshRuntimes()
+        await refreshRuntimes(probeManagedRuntimes: false)
 
         do {
             profiles = try await profileStore.loadAll()
+            normalizeRouterIdentifiers()
             let persistedID = userDefaults.string(
                 forKey: "selectedProfileID"
             ).flatMap(UUID.init(uuidString:))
@@ -343,12 +404,6 @@ final class AppModel {
                     filePath: restoredProfile.model.mainPath,
                     directoryHint: .notDirectory
                 )
-                if
-                    let runtimeID = restoredProfile.runtimeSelection.runtimeID,
-                    runtimes.contains(where: { $0.id == runtimeID })
-                {
-                    selectedRuntimeID = runtimeID
-                }
             }
             await reconcileCompletedDownloadProfiles(
                 selectNewProfile: selectedProfileID == nil
@@ -377,7 +432,9 @@ final class AppModel {
         }
     }
 
-    func refreshRuntimes() async {
+    func refreshRuntimes(
+        probeManagedRuntimes: Bool = true
+    ) async {
         guard !isRefreshingRuntimes else {
             return
         }
@@ -408,9 +465,25 @@ final class AppModel {
         )
         var reports: [RuntimeProbeReport] = []
         var validRuntimes: [RuntimeInstallation] = []
+        let managedRecordsByID = Dictionary(
+            uniqueKeysWithValues:
+                registrySnapshot.installations.map {
+                    ($0.id, $0)
+                }
+        )
 
         for candidate in candidates {
-            let report = await runtimeProbe.probe(candidate)
+            let report: RuntimeProbeReport
+            if
+                !probeManagedRuntimes,
+                candidate.source == .managed,
+                let record = managedRecordsByID[candidate.id]
+            {
+                report = runtimeProbe
+                    .restoreValidatedManagedRuntime(record)
+            } else {
+                report = await runtimeProbe.probe(candidate)
+            }
             reports.append(report)
 
             guard
@@ -461,6 +534,7 @@ final class AppModel {
             selectedRuntimeID = preferredRuntimeID(
                 in: validRuntimes
             )
+            persistSelectedRuntimeID()
         }
         refreshCommandPreview()
     }
@@ -624,7 +698,7 @@ final class AppModel {
                 .installLatest(activateAfterInstall: true)
             runtimeInstallSnapshot = await managedRuntimeInstaller
                 .snapshot()
-            await refreshRuntimes()
+            await refreshRuntimes(probeManagedRuntimes: false)
             selectRuntime(record.id)
         } catch {
             runtimeInstallSnapshot = await managedRuntimeInstaller
@@ -659,7 +733,7 @@ final class AppModel {
         defer { isChangingManagedRuntime = false }
         do {
             try await managedRuntimeRegistry.activate(id)
-            await refreshRuntimes()
+            await refreshRuntimes(probeManagedRuntimes: false)
             selectRuntime(id)
         } catch {
             visibleError = localized("""
@@ -682,7 +756,7 @@ final class AppModel {
         do {
             try await managedRuntimeRegistry.rollback()
             let snapshot = try await managedRuntimeRegistry.snapshot()
-            await refreshRuntimes()
+            await refreshRuntimes(probeManagedRuntimes: false)
             selectRuntime(snapshot.activeRuntimeID)
         } catch {
             visibleError = localized(
@@ -716,7 +790,7 @@ final class AppModel {
                 id,
                 protectedRuntimeIDs: runtimeIDsInUse
             )
-            await refreshRuntimes()
+            await refreshRuntimes(probeManagedRuntimes: false)
         } catch {
             visibleError = localized("""
                 Could not delete the managed runtime: \
@@ -737,7 +811,7 @@ final class AppModel {
                 forKey: "customRuntimeExecutablePaths"
             )
         }
-        await refreshRuntimes()
+        await refreshRuntimes(probeManagedRuntimes: false)
         if let runtime = runtimes.first(
             where: {
                 $0.serverURL.path == standardizedPath
@@ -756,15 +830,7 @@ final class AppModel {
                 : nil
         }
         selectedRuntimeID = validatedID
-        if var profile {
-            profile.runtimeSelection = RuntimeSelection(
-                policy: validatedID == nil ? .activeManaged : .specific,
-                runtimeID: validatedID
-            )
-            profile.updatedAt = Date()
-            self.profile = profile
-            persist(profile)
-        }
+        persistSelectedRuntimeID()
         refreshCommandPreview()
     }
 
@@ -782,9 +848,20 @@ final class AppModel {
         )?.id
         let now = Date()
         let modelName = standardizedURL.deletingPathExtension().lastPathComponent
+        let profileID = UUID()
+        let baseIdentifier = RouterModelOptions.defaultIdentifier(
+            name: "\(modelName) Default",
+            id: profileID
+        )
         let newProfile = LaunchProfile(
+            id: profileID,
             name: "\(modelName) Default",
             model: ModelPaths(mainPath: standardizedURL.path),
+            router: RouterModelOptions(
+                identifier: uniqueRouterIdentifier(
+                    basedOn: baseIdentifier
+                )
+            ),
             runtimeSelection: RuntimeSelection(
                 policy: selectedRuntimeID == nil
                     ? .activeManaged
@@ -1331,11 +1408,11 @@ final class AppModel {
         }
     }
 
-    func discardFailedModelDownload(
+    func discardModelDownload(
         id: UUID
     ) async {
         await performModelDownloadAction {
-            try await modelDownloadManager.discardFailed(id: id)
+            try await modelDownloadManager.discard(id: id)
         }
     }
 
@@ -1386,14 +1463,6 @@ final class AppModel {
             canonicalPath($0.url.path)
                 == canonicalPath(selected.model.mainPath)
         }?.id
-        if
-            let runtimeID = selected.runtimeSelection.runtimeID,
-            runtimes.contains(where: { $0.id == runtimeID })
-        {
-            selectedRuntimeID = runtimeID
-        } else {
-            selectedRuntimeID = preferredRuntimeID(in: runtimes)
-        }
         persistSelectedProfileID()
         refreshCommandPreview()
     }
@@ -1405,6 +1474,9 @@ final class AppModel {
         let now = Date()
         duplicate.id = UUID()
         duplicate.name = "\(duplicate.name) Copy"
+        duplicate.router.identifier = uniqueRouterIdentifier(
+            basedOn: duplicate.router.identifier
+        )
         duplicate.createdAt = now
         duplicate.updatedAt = now
         duplicate.lastUsedAt = nil
@@ -1418,12 +1490,9 @@ final class AppModel {
         guard let selected = profile else {
             return
         }
-        if
-            let run = serverSnapshot.run,
-            run.profileID == selected.id
-        {
+        if serverSnapshot.run != nil {
             visibleError = localized(
-                "Stop the server before deleting its profile."
+                "Stop the server before deleting a model setting used by its generated config."
             )
             return
         }
@@ -1463,9 +1532,13 @@ final class AppModel {
         }
 
         do {
-            let imported = try await profileStore.importProfile(
+            var imported = try await profileStore.importProfile(
                 from: Data(contentsOf: url)
             )
+            imported.router.identifier = uniqueRouterIdentifier(
+                basedOn: imported.router.identifier
+            )
+            try await profileStore.save(imported)
             profiles.append(imported)
             selectProfile(imported.id)
         } catch {
@@ -1563,6 +1636,57 @@ final class AppModel {
         refreshCommandPreview()
     }
 
+    func updateMaximumLoadedModels(_ count: Int) {
+        let normalized = min(max(count, 0), 64)
+        guard normalized != maximumLoadedModels else {
+            return
+        }
+        maximumLoadedModels = normalized
+        userDefaults.set(
+            normalized,
+            forKey: Self.maximumLoadedModelsDefaultsKey
+        )
+        refreshCommandPreview()
+    }
+
+    func updateModelsAutoload(_ isEnabled: Bool) {
+        guard isEnabled != modelsAutoload else {
+            return
+        }
+        modelsAutoload = isEnabled
+        userDefaults.set(
+            isEnabled,
+            forKey: Self.modelsAutoloadDefaultsKey
+        )
+        refreshCommandPreview()
+    }
+
+    func updateGlobalModelOptions(
+        _ mutation: (inout GlobalModelOptions) -> Void
+    ) {
+        var updatedOptions = globalModelOptions
+        mutation(&updatedOptions)
+        updatedOptions.normalize()
+        guard updatedOptions != globalModelOptions else {
+            return
+        }
+        clearServerFailure()
+        globalModelOptions = updatedOptions
+        persistGlobalModelOptions()
+        refreshCommandPreview()
+    }
+
+    func restoreGlobalModelDefaults() {
+        let defaults = GlobalModelOptions()
+        guard globalModelOptions != defaults else {
+            return
+        }
+        clearServerFailure()
+        globalModelOptions = defaults
+        persistGlobalModelOptions()
+        refreshCommandPreview()
+    }
+
     func startServer() async {
         guard !isServerOperationInProgress else {
             return
@@ -1588,30 +1712,49 @@ final class AppModel {
             )
             return
         }
-        guard let profile else {
-            visibleError = localized("Choose a GGUF model first.")
+        let launchProfiles = enabledRouterProfiles
+        guard !launchProfiles.isEmpty else {
+            visibleError = localized(
+                "Enable at least one model setting before starting the server."
+            )
             return
         }
-        beginServerModelSecurityScope(for: profile)
-        guard FileManager.default.fileExists(atPath: profile.model.mainPath) else {
+        beginServerModelSecurityScope(for: launchProfiles)
+        guard launchProfiles.allSatisfy({
+            FileManager.default.fileExists(atPath: $0.model.mainPath)
+        }) else {
             endServerModelSecurityScope()
             visibleError = localized(
-                "The selected GGUF model no longer exists."
+                "One or more enabled model files no longer exist."
             )
             return
         }
 
         let invocation: ProcessInvocation
         do {
-            let effectiveProfile = profileWithServiceNetwork(profile)
-            invocation = try ServerInvocationBuilder().makeServerInvocation(
-                profile: effectiveProfile,
+            let builder = ModelsPresetBuilder()
+            let document = try builder.makeDocument(
+                profiles: launchProfiles,
+                globalOptions: globalModelOptions,
+                runtime: runtime
+            )
+            try FileManager.default.createDirectory(
+                at: applicationDirectories.serverConfiguration,
+                withIntermediateDirectories: true
+            )
+            try Data(document.contents.utf8).write(
+                to: applicationDirectories.modelsPreset,
+                options: .atomic
+            )
+            invocation = try builder.makeInvocation(
+                presetURL: applicationDirectories.modelsPreset,
+                options: routerServerOptions,
                 runtime: runtime
             )
         } catch {
             endServerModelSecurityScope()
             visibleError = localized(
-                "Cannot build launch command: \(String(describing: error))"
+                "Cannot build llama-server config: \(String(describing: error))"
             )
             return
         }
@@ -1622,17 +1765,26 @@ final class AppModel {
 
         do {
             try await serverController.start(
-                profileID: profile.id,
+                profileID: launchProfiles[0].id,
                 runtimeID: runtime.id,
                 invocation: invocation,
                 host: serviceHost,
                 port: servicePort
             )
-            var usedProfile = profile
-            usedProfile.lastUsedAt = Date()
-            usedProfile.updatedAt = usedProfile.lastUsedAt ?? Date()
-            self.profile = usedProfile
-            persist(usedProfile)
+            let now = Date()
+            for launchProfile in launchProfiles
+            where launchProfile.router.loadOnStartup {
+                guard
+                    let index = profiles.firstIndex(
+                        where: { $0.id == launchProfile.id }
+                    )
+                else {
+                    continue
+                }
+                profiles[index].lastUsedAt = now
+                profiles[index].updatedAt = now
+                persist(profiles[index])
+            }
         } catch {
             endServerModelSecurityScope()
             let message = serverStartFailureMessage(for: error)
@@ -1662,12 +1814,14 @@ final class AppModel {
         ServiceControlState(
             serverState: serverSnapshot.state,
             hasRuntime: selectedRuntime != nil,
-            hasProfile: profile != nil,
-            modelIsAvailable: profile.map {
-                FileManager.default.fileExists(
-                    atPath: $0.model.mainPath
-                )
-            } ?? false,
+            hasProfile: !enabledRouterProfiles.isEmpty,
+            modelIsAvailable:
+                !enabledRouterProfiles.isEmpty
+                    && enabledRouterProfiles.allSatisfy {
+                        FileManager.default.fileExists(
+                            atPath: $0.model.mainPath
+                        )
+                    },
             serverOperationInProgress:
                 isServerOperationInProgress,
             runtimeOperationInProgress:
@@ -1699,10 +1853,12 @@ final class AppModel {
                 "Choose a validated llama.cpp runtime first."
             )
         case .missingProfile:
-            return localized("Choose a GGUF model first.")
+            return localized(
+                "Enable at least one model setting before starting the server."
+            )
         case .missingModel:
             return localized(
-                "The selected GGUF model no longer exists."
+                "One or more enabled model files no longer exist."
             )
         case .alreadyRunning:
             return localized("The server is already running.")
@@ -1715,6 +1871,8 @@ final class AppModel {
 
         await serverController.stop()
         serverFailureMessage = nil
+        serverModels = []
+        lastServerModelsRefreshAt = nil
         endServerModelSecurityScope()
         serverSnapshot = await serverController.snapshot()
         serverMonitorTask?.cancel()
@@ -1755,6 +1913,39 @@ final class AppModel {
 
     var selectedRuntime: RuntimeInstallation? {
         runtimes.first { $0.id == selectedRuntimeID }
+    }
+
+    var enabledRouterProfiles: [LaunchProfile] {
+        profiles
+            .filter(\.router.isEnabled)
+            .sorted {
+                if $0.name == $1.name {
+                    return $0.id.uuidString < $1.id.uuidString
+                }
+                return $0.name.localizedStandardCompare($1.name)
+                    == .orderedAscending
+            }
+    }
+
+    var loadedServerModelCount: Int {
+        serverModels.filter {
+            if case .loaded = $0.state {
+                return true
+            }
+            return false
+        }.count
+    }
+
+    func serverModel(
+        for profile: LaunchProfile
+    ) -> LlamaServerModel? {
+        serverModels.first {
+            $0.id == profile.router.identifier
+                || (
+                    $0.path.map(canonicalPath)
+                        == canonicalPath(profile.model.mainPath)
+                )
+        }
     }
 
     var selectedLibraryModel: LocalModelFile? {
@@ -2596,33 +2787,42 @@ final class AppModel {
     }
 
     private func refreshCommandPreview() {
-        guard let profile, let runtime = selectedRuntime else {
+        guard let runtime = selectedRuntime else {
             commandPreview = nil
             commandError = nil
+            modelsPresetPreview = nil
             return
         }
 
         do {
-            let effectiveProfile = profileWithServiceNetwork(profile)
-            let invocation = try ServerInvocationBuilder().makeServerInvocation(
-                profile: effectiveProfile,
+            let builder = ModelsPresetBuilder()
+            let document = try builder.makeDocument(
+                profiles: enabledRouterProfiles,
+                globalOptions: globalModelOptions,
+                runtime: runtime
+            )
+            let invocation = try builder.makeInvocation(
+                presetURL: applicationDirectories.modelsPreset,
+                options: routerServerOptions,
                 runtime: runtime
             )
             commandPreview = invocation.displayCommand
+            modelsPresetPreview = document.contents
             commandError = nil
         } catch {
             commandPreview = nil
+            modelsPresetPreview = nil
             commandError = String(describing: error)
         }
     }
 
-    private func profileWithServiceNetwork(
-        _ profile: LaunchProfile
-    ) -> LaunchProfile {
-        var effectiveProfile = profile
-        effectiveProfile.server.host = serviceHost
-        effectiveProfile.server.port = servicePort
-        return effectiveProfile
+    private var routerServerOptions: RouterServerOptions {
+        RouterServerOptions(
+            host: serviceHost,
+            port: servicePort,
+            maximumLoadedModels: maximumLoadedModels,
+            modelsAutoload: modelsAutoload
+        )
     }
 
     private func migrateServiceNetworkConfigurationIfNeeded(
@@ -2652,6 +2852,16 @@ final class AppModel {
         userDefaults.set(
             Int(servicePort),
             forKey: Self.servicePortDefaultsKey
+        )
+    }
+
+    private func persistGlobalModelOptions() {
+        guard let data = try? JSONEncoder().encode(globalModelOptions) else {
+            return
+        }
+        userDefaults.set(
+            data,
+            forKey: Self.globalModelOptionsDefaultsKey
         )
     }
 
@@ -2714,6 +2924,19 @@ final class AppModel {
         } else {
             userDefaults.removeObject(
                 forKey: "selectedProfileID"
+            )
+        }
+    }
+
+    private func persistSelectedRuntimeID() {
+        if let selectedRuntimeID {
+            userDefaults.set(
+                selectedRuntimeID,
+                forKey: Self.selectedRuntimeDefaultsKey
+            )
+        } else {
+            userDefaults.removeObject(
+                forKey: Self.selectedRuntimeDefaultsKey
             )
         }
     }
@@ -2835,11 +3058,25 @@ final class AppModel {
 
                 switch snapshot.state {
                 case .failed, .stopped:
+                    self.serverModels = []
+                    self.lastServerModelsRefreshAt = nil
                     if !self.isServerOperationInProgress {
                         self.endServerModelSecurityScope()
                         return
                     }
-                case .starting, .ready, .degraded, .stopping:
+                case .ready, .degraded:
+                    if
+                        let baseURL = snapshot.run?.baseURL,
+                        self.lastServerModelsRefreshAt.map({
+                            Date().timeIntervalSince($0) >= 1
+                        }) ?? true
+                    {
+                        self.lastServerModelsRefreshAt = Date()
+                        await self.refreshServerModels(
+                            baseURL: baseURL
+                        )
+                    }
+                case .starting, .stopping:
                     break
                 }
 
@@ -2855,15 +3092,30 @@ final class AppModel {
         }
     }
 
+    private func refreshServerModels(
+        baseURL: URL
+    ) async {
+        do {
+            serverModels = try await serverModelsAdapter.models(
+                baseURL: baseURL
+            )
+        } catch {
+            // The router may be ready before the model registry endpoint is.
+            // Keep the previous snapshot and try again on the next monitor tick.
+        }
+    }
+
     private func beginServerModelSecurityScope(
-        for profile: LaunchProfile
+        for profiles: [LaunchProfile]
     ) {
         endServerModelSecurityScope()
-        let modelPaths = [
-            profile.model.mainPath,
-            profile.model.mmprojPath,
-            profile.model.draftPath,
-        ].compactMap { $0 }
+        let modelPaths = profiles.flatMap { profile in
+            [
+                profile.model.mainPath,
+                profile.model.mmprojPath,
+                profile.model.draftPath,
+            ].compactMap { $0 }
+        }
         serverModelURLs = modelPaths.map {
             URL(
                 filePath: $0,
@@ -2925,6 +3177,59 @@ final class AppModel {
             path,
             directoryHint: .notDirectory
         )
+    }
+
+    private func uniqueRouterIdentifier(
+        basedOn requestedBase: String
+    ) -> String {
+        let base = requestedBase.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        let normalizedBase = base.isEmpty ? "model" : base
+        let existing = Set(
+            profiles.map {
+                $0.router.identifier.lowercased()
+            }
+        )
+        guard !existing.contains(normalizedBase.lowercased()) else {
+            var suffix = 2
+            while existing.contains(
+                "\(normalizedBase)-\(suffix)".lowercased()
+            ) {
+                suffix += 1
+            }
+            return "\(normalizedBase)-\(suffix)"
+        }
+        return normalizedBase
+    }
+
+    private func normalizeRouterIdentifiers() {
+        var used: Set<String> = []
+        for index in profiles.indices {
+            let requested = profiles[index].router.identifier
+                .trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+            let base = requested.isEmpty
+                ? RouterModelOptions.defaultIdentifier(
+                    name: profiles[index].name,
+                    id: profiles[index].id
+                )
+                : requested
+            var candidate = base
+            var suffix = 2
+            while used.contains(candidate.lowercased()) {
+                candidate = "\(base)-\(suffix)"
+                suffix += 1
+            }
+            used.insert(candidate.lowercased())
+            guard candidate != profiles[index].router.identifier else {
+                continue
+            }
+            profiles[index].router.identifier = candidate
+            profiles[index].updatedAt = Date()
+            persist(profiles[index])
+        }
     }
 
     private func path(

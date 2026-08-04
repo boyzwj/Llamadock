@@ -12,6 +12,9 @@ public enum ModelDownloadTransportError:
     )
     case nonHTTPResponse
     case invalidContentRange(String?)
+    case rangeNotHonored(expectedStart: Int64, statusCode: Int)
+    case entityTagMismatch(expected: String, actual: String)
+    case repositoryCommitMismatch(expected: String, actual: String)
     case insecureRedirect(URL)
     case fileWrite(String)
     case transport(String)
@@ -28,6 +31,12 @@ extension ModelDownloadTransportError: LocalizedError {
             "The model download did not return an HTTP response."
         case .invalidContentRange(let value):
             "The model download returned an invalid Content-Range: \(value ?? "missing")."
+        case .rangeNotHonored(let expectedStart, let statusCode):
+            "The model host did not honor the byte range starting at \(expectedStart) (HTTP \(statusCode))."
+        case .entityTagMismatch(let expected, let actual):
+            "The model file changed while it was downloading (ETag \(expected) became \(actual))."
+        case .repositoryCommitMismatch(let expected, let actual):
+            "The model repository changed while it was downloading (revision \(expected) became \(actual))."
         case .insecureRedirect(let url):
             "The model download refused an insecure redirect to \(url.absoluteString)."
         case .fileWrite(let reason):
@@ -38,21 +47,97 @@ extension ModelDownloadTransportError: LocalizedError {
     }
 }
 
+public struct ModelDownloadByteRange:
+    Equatable,
+    Sendable
+{
+    public let start: Int64
+    public let end: Int64
+    public let total: Int64
+
+    public init(start: Int64, end: Int64, total: Int64) {
+        self.start = start
+        self.end = end
+        self.total = total
+    }
+}
+
+public struct ModelDownloadResponseMetadata:
+    Equatable,
+    Sendable
+{
+    public let etag: String?
+    public let repositoryCommit: String?
+
+    public init(
+        etag: String? = nil,
+        repositoryCommit: String? = nil
+    ) {
+        self.etag = etag
+        self.repositoryCommit = repositoryCommit
+    }
+}
+
+public final class ModelDownloadResponseMetadataRecorder:
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var etag: String?
+    private var repositoryCommit: String?
+
+    public init() {}
+
+    public func record(
+        _ metadata: ModelDownloadResponseMetadata
+    ) {
+        lock.lock()
+        etag = metadata.etag ?? etag
+        repositoryCommit = metadata.repositoryCommit
+            ?? repositoryCommit
+        lock.unlock()
+    }
+
+    public func snapshot() -> ModelDownloadResponseMetadata {
+        lock.lock()
+        let metadata = ModelDownloadResponseMetadata(
+            etag: etag,
+            repositoryCommit: repositoryCommit
+        )
+        lock.unlock()
+        return metadata
+    }
+}
+
 public struct ModelDownloadTransferRequest:
     Sendable
 {
     public let request: URLRequest
     public let destinationURL: URL
     public let existingByteCount: Int64
+    public let expectedRange: ModelDownloadByteRange?
+    public let expectedETag: String?
+    public let expectedRepositoryCommit: String?
+    public let metadataRecorder:
+        ModelDownloadResponseMetadataRecorder?
 
     public init(
         request: URLRequest,
         destinationURL: URL,
-        existingByteCount: Int64
+        existingByteCount: Int64,
+        expectedRange: ModelDownloadByteRange? = nil,
+        expectedETag: String? = nil,
+        expectedRepositoryCommit: String? = nil,
+        metadataRecorder:
+            ModelDownloadResponseMetadataRecorder? = nil
     ) {
         self.request = request
         self.destinationURL = destinationURL
         self.existingByteCount = existingByteCount
+        self.expectedRange = expectedRange
+        self.expectedETag = expectedETag
+        self.expectedRepositoryCommit =
+            expectedRepositoryCommit
+        self.metadataRecorder = metadataRecorder
     }
 }
 
@@ -111,10 +196,21 @@ public struct URLSessionModelDownloadTransport:
         _ transfer: ModelDownloadTransferRequest,
         progress: @escaping @Sendable (Int64) -> Void
     ) async throws -> ModelDownloadTransferResponse {
+        let expectedRangeIsValid: Bool
+        if let range = transfer.expectedRange {
+            expectedRangeIsValid =
+                range.start == transfer.existingByteCount
+                    && range.start >= 0
+                    && range.end >= range.start
+                    && range.total > range.end
+        } else {
+            expectedRangeIsValid = true
+        }
         guard
             transfer.destinationURL.isFileURL,
             transfer.destinationURL.path.hasPrefix("/"),
-            transfer.existingByteCount >= 0
+            transfer.existingByteCount >= 0,
+            expectedRangeIsValid
         else {
             throw ModelDownloadTransportError.invalidDestination(
                 transfer.destinationURL
@@ -211,6 +307,7 @@ private final class ModelDownloadTransferOperation:
     private var statusCode: Int?
     private var contentLength: Int64?
     private var etag: String?
+    private var repositoryCommit: String?
     private var effectiveStartByte: Int64
     private var receivedBytes: Int64 = 0
     private var operationError: (any Error)?
@@ -298,33 +395,92 @@ private final class ModelDownloadTransferOperation:
         etag = response.value(
             forHTTPHeaderField: "ETag"
         )
+        repositoryCommit = response.value(
+            forHTTPHeaderField: "X-Repo-Commit"
+        ) ?? repositoryCommit
+        transfer.metadataRecorder?.record(
+            ModelDownloadResponseMetadata(
+                etag: etag,
+                repositoryCommit: repositoryCommit
+            )
+        )
+        if
+            let expected = transfer.expectedETag,
+            let etag,
+            etag != expected
+        {
+            fail(
+                ModelDownloadTransportError.entityTagMismatch(
+                    expected: expected,
+                    actual: etag
+                )
+            )
+            completionHandler(.cancel)
+            return
+        }
+        if
+            let expected = transfer.expectedRepositoryCommit,
+            let repositoryCommit,
+            repositoryCommit != expected
+        {
+            fail(
+                ModelDownloadTransportError
+                    .repositoryCommitMismatch(
+                        expected: expected,
+                        actual: repositoryCommit
+                    )
+            )
+            completionHandler(.cancel)
+            return
+        }
 
         switch response.statusCode {
         case 200:
-            if transfer.existingByteCount > 0 {
-                do {
-                    try handle?.truncate(atOffset: 0)
-                    try handle?.seek(toOffset: 0)
-                    effectiveStartByte = 0
-                    lastReportedByteCount = 0
-                } catch {
+            if let expectedRange = transfer.expectedRange {
+                guard
+                    expectedRange.start == 0,
+                    expectedRange.end
+                        == expectedRange.total - 1
+                else {
                     fail(
-                        ModelDownloadTransportError.fileWrite(
-                            error.localizedDescription
-                        )
+                        ModelDownloadTransportError
+                            .rangeNotHonored(
+                                expectedStart:
+                                    expectedRange.start,
+                                statusCode: response.statusCode
+                            )
                     )
                     completionHandler(.cancel)
                     return
                 }
+            } else if transfer.existingByteCount > 0 {
+                fail(
+                    ModelDownloadTransportError
+                        .rangeNotHonored(
+                            expectedStart:
+                                transfer.existingByteCount,
+                            statusCode: response.statusCode
+                        )
+                )
+                completionHandler(.cancel)
+                return
             }
         case 206:
             let header = response.value(
                 forHTTPHeaderField: "Content-Range"
             )
-            guard
-                contentRangeStart(header)
+            let contentRange = contentRange(header)
+            let isValid: Bool
+            if let expected = transfer.expectedRange {
+                isValid = contentRange?.start == expected.start
+                    && contentRange?.total == expected.total
+                    && (contentRange?.end ?? Int64.max)
+                        <= expected.end
+            } else {
+                isValid = contentRange?.start
                     == transfer.existingByteCount
-            else {
+            }
+            guard isValid else {
                 fail(
                     ModelDownloadTransportError
                         .invalidContentRange(header)
@@ -347,7 +503,17 @@ private final class ModelDownloadTransferOperation:
         didReceive data: Data
     ) {
         do {
-            try handle?.write(contentsOf: data)
+            var writeError: (any Error)?
+            autoreleasepool {
+                do {
+                    try handle?.write(contentsOf: data)
+                } catch {
+                    writeError = error
+                }
+            }
+            if let writeError {
+                throw writeError
+            }
             let sum = receivedBytes.addingReportingOverflow(
                 Int64(data.count)
             )
@@ -380,6 +546,30 @@ private final class ModelDownloadTransferOperation:
         newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
+        let commit = response.value(
+            forHTTPHeaderField: "X-Repo-Commit"
+        )
+        repositoryCommit = commit ?? repositoryCommit
+        transfer.metadataRecorder?.record(
+            ModelDownloadResponseMetadata(
+                repositoryCommit: repositoryCommit
+            )
+        )
+        if
+            let expected = transfer.expectedRepositoryCommit,
+            let repositoryCommit,
+            repositoryCommit != expected
+        {
+            fail(
+                ModelDownloadTransportError
+                    .repositoryCommitMismatch(
+                        expected: expected,
+                        actual: repositoryCommit
+                    )
+            )
+            completionHandler(nil)
+            return
+        }
         do {
             completionHandler(
                 try URLSessionModelDownloadTransport
@@ -459,24 +649,45 @@ private final class ModelDownloadTransferOperation:
         )
     }
 
-    private func contentRangeStart(
+    private func contentRange(
         _ value: String?
-    ) -> Int64? {
+    ) -> ModelDownloadByteRange? {
         guard
             let value,
-            value.lowercased().hasPrefix("bytes "),
-            let range = value.dropFirst(6).split(
-                separator: "/",
-                maxSplits: 1
-            ).first,
-            let start = range.split(
-                separator: "-",
-                maxSplits: 1
-            ).first
+            value.lowercased().hasPrefix("bytes ")
         else {
             return nil
         }
-        return Int64(start)
+        let components = value.dropFirst(6).split(
+            separator: "/",
+            maxSplits: 1
+        )
+        guard
+            components.count == 2,
+            let total = Int64(components[1]),
+            let range = components.first
+        else {
+            return nil
+        }
+        let bounds = range.split(
+            separator: "-",
+            maxSplits: 1
+        )
+        guard
+            bounds.count == 2,
+            let start = Int64(bounds[0]),
+            let end = Int64(bounds[1]),
+            start >= 0,
+            end >= start,
+            total > end
+        else {
+            return nil
+        }
+        return ModelDownloadByteRange(
+            start: start,
+            end: end,
+            total: total
+        )
     }
 
     private func fail(

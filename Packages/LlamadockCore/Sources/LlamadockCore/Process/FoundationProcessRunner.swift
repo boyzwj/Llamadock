@@ -31,6 +31,7 @@ public struct FoundationProcessRunner: ProcessRunning {
         ownedProcess.process.environment = invocation.environment
         ownedProcess.process.standardOutput = standardOutputPipe
         ownedProcess.process.standardError = standardErrorPipe
+        ownedProcess.installTerminationHandler()
 
         let launchOutcome = await withTaskCancellationHandler {
             await ownedProcess.launch(
@@ -43,7 +44,8 @@ public struct FoundationProcessRunner: ProcessRunning {
 
         switch launchOutcome {
         case .started:
-            break
+            standardOutputPipe.fileHandleForWriting.closeFile()
+            standardErrorPipe.fileHandleForWriting.closeFile()
         case .timedOut:
             return ProcessResult(
                 terminationStatus: SIGKILL,
@@ -54,6 +56,8 @@ public struct FoundationProcessRunner: ProcessRunning {
         case .cancelled:
             throw CancellationError()
         case .failed(let reason):
+            standardOutputPipe.fileHandleForWriting.closeFile()
+            standardErrorPipe.fileHandleForWriting.closeFile()
             throw FoundationProcessLaunchError(reason: reason)
         }
 
@@ -64,30 +68,12 @@ public struct FoundationProcessRunner: ProcessRunning {
             await standardErrorHandle.readToEnd()
         }
 
-        let race = await withTaskCancellationHandler {
-            await withTaskGroup(of: ProcessRace.self) { group in
-                group.addTask {
-                    await ownedProcess.waitUntilExit()
-                    return .exited
-                }
-                group.addTask {
-                    do {
-                        try await Task.sleep(for: timeout)
-                        return .timedOut
-                    } catch {
-                        return .cancelled
-                    }
-                }
-
-                let first = await group.next() ?? .cancelled
-                if first != .exited {
-                    ownedProcess.forceTerminate()
-                }
-                group.cancelAll()
-                return first
-            }
-        } onCancel: {
-            ownedProcess.forceTerminate()
+        let race = await ownedProcess.waitForExit(
+            timeout: timeout
+        )
+        if race != .exited {
+            standardOutputHandle.close()
+            standardErrorHandle.close()
         }
 
         let standardOutputData = await standardOutputTask.value
@@ -98,7 +84,9 @@ public struct FoundationProcessRunner: ProcessRunning {
         }
 
         return ProcessResult(
-            terminationStatus: ownedProcess.process.terminationStatus,
+            terminationStatus: race == .timedOut
+                ? SIGKILL
+                : ownedProcess.process.terminationStatus,
             standardOutput: String(
                 decoding: standardOutputData,
                 as: UTF8.self
@@ -140,7 +128,15 @@ private final class OwnedProcess: @unchecked Sendable {
     let process = Process()
     private let lock = NSLock()
     private var launchRace: ProcessLaunchRace?
+    private var terminationRace: ProcessTerminationRace?
     private var terminationRequested = false
+    private var didTerminate = false
+
+    func installTerminationHandler() {
+        process.terminationHandler = { [weak self] _ in
+            self?.recordTermination()
+        }
+    }
 
     func launch(
         on queue: DispatchQueue,
@@ -182,12 +178,46 @@ private final class OwnedProcess: @unchecked Sendable {
         }
     }
 
-    func waitUntilExit() async {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .utility).async {
-                self.process.waitUntilExit()
-                continuation.resume()
+    func waitForExit(
+        timeout: Duration
+    ) async -> ProcessRace {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let race = ProcessTerminationRace(continuation)
+                let state = lock.withLock {
+                    terminationRace = race
+                    return (
+                        didTerminate: didTerminate,
+                        cancellationRequested:
+                            terminationRequested
+                    )
+                }
+
+                if state.didTerminate {
+                    race.resolve(.exited)
+                    return
+                }
+                if state.cancellationRequested {
+                    race.resolve(.cancelled) {
+                        self.forceTerminate()
+                    }
+                    return
+                }
+
+                let timeoutTask = Task {
+                    do {
+                        try await Task.sleep(for: timeout)
+                    } catch {
+                        return
+                    }
+                    race.resolve(.timedOut) {
+                        self.forceTerminate()
+                    }
+                }
+                race.installTimeoutTask(timeoutTask)
             }
+        } onCancel: {
+            cancelTerminationWait()
         }
     }
 
@@ -198,6 +228,24 @@ private final class OwnedProcess: @unchecked Sendable {
         if race?.resolve(.cancelled) == true {
             forceTerminate()
         }
+    }
+
+    private func cancelTerminationWait() {
+        let race = lock.withLock {
+            terminationRequested = true
+            return terminationRace
+        }
+        race?.resolve(.cancelled) {
+            forceTerminate()
+        }
+    }
+
+    private func recordTermination() {
+        let race = lock.withLock {
+            didTerminate = true
+            return terminationRace
+        }
+        race?.resolve(.exited)
     }
 
     func forceTerminate() {
@@ -249,6 +297,58 @@ private final class ProcessLaunchRace: @unchecked Sendable {
     }
 }
 
+private final class ProcessTerminationRace:
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var continuation:
+        CheckedContinuation<ProcessRace, Never>?
+    private var timeoutTask: Task<Void, Never>?
+
+    init(
+        _ continuation:
+            CheckedContinuation<ProcessRace, Never>
+    ) {
+        self.continuation = continuation
+    }
+
+    func installTimeoutTask(
+        _ task: Task<Void, Never>
+    ) {
+        let shouldCancel = lock.withLock {
+            guard continuation != nil else {
+                return true
+            }
+            timeoutTask = task
+            return false
+        }
+        if shouldCancel {
+            task.cancel()
+        }
+    }
+
+    @discardableResult
+    func resolve(
+        _ outcome: ProcessRace,
+        beforeResume: () -> Void = {}
+    ) -> Bool {
+        let resolved = lock.withLock {
+            let value = continuation
+            continuation = nil
+            let task = timeoutTask
+            timeoutTask = nil
+            return (value, task)
+        }
+        guard let continuation = resolved.0 else {
+            return false
+        }
+        beforeResume()
+        resolved.1?.cancel()
+        continuation.resume(returning: outcome)
+        return true
+    }
+}
+
 private final class ReadHandle: @unchecked Sendable {
     let handle: FileHandle
 
@@ -260,9 +360,14 @@ private final class ReadHandle: @unchecked Sendable {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
                 continuation.resume(
-                    returning: self.handle.readDataToEndOfFile()
+                    returning:
+                        (try? self.handle.readToEnd()) ?? Data()
                 )
             }
         }
+    }
+
+    func close() {
+        try? handle.close()
     }
 }

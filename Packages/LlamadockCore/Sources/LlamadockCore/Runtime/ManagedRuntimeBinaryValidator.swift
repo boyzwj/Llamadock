@@ -443,7 +443,8 @@ public struct PreparedManagedRuntimeValidator:
             installedAt: now,
             validatedAt: now,
             versionOutput: serverVersion,
-            archiveSHA256: archiveSHA256
+            archiveSHA256: archiveSHA256,
+            capabilities: report.capabilities
         )
     }
 

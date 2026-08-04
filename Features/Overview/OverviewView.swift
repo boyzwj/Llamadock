@@ -9,8 +9,8 @@ struct OverviewView: View {
     var body: some View {
         LlamaDockPage {
             LlamaDockPageHeader(
-                "Overview",
-                subtitle: "Local llama.cpp service control"
+                "Dashboard",
+                subtitle: "Multi-model llama.cpp router control"
             ) {
                 if appModel.serviceStatus.isReachable {
                     Button("Copy API URL", systemImage: "doc.on.doc") {
@@ -23,8 +23,8 @@ struct OverviewView: View {
 
             if let failure = appModel.serverFailureMessage {
                 InlineNotice(failure, tone: .failed) {
-                    Button("Open Service") {
-                        appModel.selectedSection = .service
+                    Button("Open Settings") {
+                        appModel.selectedSection = .settings
                     }
                 }
             }
@@ -63,21 +63,22 @@ struct OverviewView: View {
             resourceSummary
             recentActivity
         }
-        .navigationTitle("Overview")
+        .navigationTitle("Dashboard")
     }
 
     private var needsSetup: Bool {
         appModel.selectedRuntime == nil
-            || appModel.profile == nil
-            || !selectedModelExists
+            || appModel.enabledRouterProfiles.isEmpty
+            || !enabledModelsExist
     }
 
-    private var selectedModelExists: Bool {
-        appModel.profile.map {
+    private var enabledModelsExist: Bool {
+        !appModel.enabledRouterProfiles.isEmpty
+            && appModel.enabledRouterProfiles.allSatisfy {
             FileManager.default.fileExists(
                 atPath: $0.model.mainPath
             )
-        } ?? false
+        }
     }
 
     private var endpoint: String? {
@@ -105,7 +106,7 @@ struct OverviewView: View {
         case .stopped:
             return appModel.startServerBlockReason
                 ?? localized(
-                    "Runtime and profile are ready. Start the owned server when needed."
+                    "Runtime and model config are ready. Start the multi-model router when needed."
                 )
         case .starting:
             return localized(
@@ -113,7 +114,7 @@ struct OverviewView: View {
             )
         case .ready:
             return localized(
-                "The API and built-in WebUI are reachable."
+                "The multi-model API and built-in WebUI are reachable."
             )
         case .degraded(let reason):
             return localized("Health check degraded: \(reason)")
@@ -181,8 +182,8 @@ struct OverviewView: View {
             VStack(alignment: .leading, spacing: 14) {
                 sectionHeader(
                     "Current Configuration",
-                    actionTitle: "Open Service",
-                    destination: .service
+                    actionTitle: "Open Settings",
+                    destination: .settings
                 )
 
                 Grid(
@@ -191,24 +192,14 @@ struct OverviewView: View {
                     verticalSpacing: 10
                 ) {
                     configurationRow(
-                        "Model",
-                        appModel.profile.map {
-                            URL(filePath: $0.model.mainPath)
-                                .lastPathComponent
-                        } ?? localized("Not configured")
+                        "Model Settings",
+                        localized(
+                            "\(appModel.enabledRouterProfiles.count) enabled"
+                        )
                     )
                     configurationRow(
-                        "Profile",
-                        appModel.profile?.name
-                            ?? localized("Not configured")
-                    )
-                    configurationRow(
-                        "Context",
-                        appModel.profile?
-                            .server
-                            .contextSize?
-                            .formatted()
-                            ?? localized("Runtime default")
+                        "Loaded Models",
+                        "\(appModel.loadedServerModelCount)"
                     )
                     configurationRow(
                         "Host / Port",
@@ -455,21 +446,21 @@ private struct FirstRunChecklist: View {
                 )
                 setupRow(
                     "2. Choose a GGUF Model",
-                    isComplete: appModel.profile != nil,
+                    isComplete: !appModel.localModels.isEmpty,
                     destination: .models
                 )
                 setupRow(
-                    "3. Review the Profile",
+                    "3. Configure Model Settings",
                     isComplete:
-                        appModel.profile != nil
+                        !appModel.enabledRouterProfiles.isEmpty
                             && appModel.commandPreview != nil,
-                    destination: .service
+                    destination: .settings
                 )
                 setupRow(
                     "4. Start the Service",
                     isComplete:
                         appModel.serviceStatus.isReachable,
-                    destination: .service
+                    destination: .overview
                 )
             }
         }

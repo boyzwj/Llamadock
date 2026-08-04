@@ -34,7 +34,7 @@ struct RealModelDownloadTransportSmokeTests {
 
         var request = URLRequest(url: url)
         request.setValue(
-            "bytes=\(prefixLength)-",
+            "bytes=\(prefixLength)-\(payload.count - 1)",
             forHTTPHeaderField: "Range"
         )
         let response = try await URLSessionModelDownloadTransport()
@@ -42,7 +42,12 @@ struct RealModelDownloadTransportSmokeTests {
                 ModelDownloadTransferRequest(
                     request: request,
                     destinationURL: destination,
-                    existingByteCount: Int64(prefixLength)
+                    existingByteCount: Int64(prefixLength),
+                    expectedRange: ModelDownloadByteRange(
+                        start: Int64(prefixLength),
+                        end: Int64(payload.count - 1),
+                        total: Int64(payload.count)
+                    )
                 )
             ) { _ in }
 
@@ -58,8 +63,8 @@ struct RealModelDownloadTransportSmokeTests {
         )
     }
 
-    @Test("restarts safely when the server ignores Range")
-    func restartsWhenRangeIsIgnored() async throws {
+    @Test("preserves the partial file when the server ignores Range")
+    func preservesPartialWhenRangeIsIgnored() async throws {
         guard let baseURL = smokeURL else {
             return
         }
@@ -75,22 +80,28 @@ struct RealModelDownloadTransportSmokeTests {
             )
         )
         request.setValue(
-            "bytes=\(prefixLength)-",
+            "bytes=\(prefixLength)-\(payload.count - 1)",
             forHTTPHeaderField: "Range"
         )
-        let response = try await URLSessionModelDownloadTransport()
-            .transfer(
+        await #expect(throws: ModelDownloadTransportError.self) {
+            _ = try await URLSessionModelDownloadTransport().transfer(
                 ModelDownloadTransferRequest(
                     request: request,
                     destinationURL: destination,
-                    existingByteCount: Int64(prefixLength)
+                    existingByteCount: Int64(prefixLength),
+                    expectedRange: ModelDownloadByteRange(
+                        start: Int64(prefixLength),
+                        end: Int64(payload.count - 1),
+                        total: Int64(payload.count)
+                    )
                 )
             ) { _ in }
+        }
 
-        #expect(response.statusCode == 200)
-        #expect(response.resumedFromByte == 0)
-        #expect(response.finalByteCount == Int64(payload.count))
-        #expect(try Data(contentsOf: destination) == payload)
+        #expect(
+            try Data(contentsOf: destination)
+                == Data(payload.prefix(prefixLength))
+        )
     }
 
     @Test("rejects a mismatched Content-Range before appending")
@@ -111,7 +122,7 @@ struct RealModelDownloadTransportSmokeTests {
             )
         )
         request.setValue(
-            "bytes=\(prefixLength)-",
+            "bytes=\(prefixLength)-\(payload.count - 1)",
             forHTTPHeaderField: "Range"
         )
 
@@ -121,7 +132,12 @@ struct RealModelDownloadTransportSmokeTests {
                     ModelDownloadTransferRequest(
                         request: request,
                         destinationURL: destination,
-                        existingByteCount: Int64(prefixLength)
+                        existingByteCount: Int64(prefixLength),
+                        expectedRange: ModelDownloadByteRange(
+                            start: Int64(prefixLength),
+                            end: Int64(payload.count - 1),
+                            total: Int64(payload.count)
+                        )
                     )
                 ) { _ in }
         }

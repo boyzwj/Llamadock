@@ -71,7 +71,7 @@ struct DownloadsView: View {
                             cleanup: {
                                 Task {
                                     await appModel
-                                        .discardFailedModelDownload(
+                                        .discardModelDownload(
                                             id: job.id
                                         )
                                 }
@@ -279,7 +279,10 @@ private struct DownloadJobCard: View {
                             action: cancel
                         )
                     }
-                    if job.state == .failed {
+                    if
+                        [.failed, .cancelled].contains(job.state),
+                        !isActive
+                    {
                         Button(
                             "Clean Up",
                             systemImage: "trash",
@@ -288,7 +291,7 @@ private struct DownloadJobCard: View {
                             isShowingCleanupConfirmation = true
                         }
                         .help(
-                            "Delete unfinished files and remove this failed task."
+                            "Delete unfinished files and remove this download task."
                         )
                     }
                     if job.state == .completed {
@@ -318,7 +321,7 @@ private struct DownloadJobCard: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(
-                "This permanently deletes unfinished files for \(job.displayName) and removes the failed task from the download queue. This cannot be undone."
+                "This permanently deletes unfinished files for \(job.displayName) and removes the task from the download queue. This cannot be undone."
             )
         }
     }
